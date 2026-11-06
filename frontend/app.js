@@ -71,7 +71,7 @@ function card(inv, { large = false, tag = "" } = {}) {
 function tradeRow(t, { showInvestor = false, isNew = false } = {}) {
   const [label, cls] = ACTIONS[t.action] || [t.action, "neutral"];
   const lead = showInvestor
-    ? `<img class="avatar" src="/api/photo/${esc(t.investor_id)}" alt="" loading="lazy">`
+    ? `<img class="avatar ${t.investor_kind === "company" ? "logo" : ""}" src="/api/photo/${esc(t.investor_id)}" alt="" loading="lazy">`
     : `<div class="logo-tk">${esc((t.ticker || "—").slice(0, 5))}</div>`;
   const what = showInvestor
     ? `${esc(t.investor_name)} · ${esc(t.ticker || t.issuer || "")}`
@@ -164,6 +164,8 @@ async function viewInvestor(id, tab) {
       <div class="stat"><div class="k">Dernier dépôt</div><div class="v">${ago(inv.last_filing)}</div></div>
     </div>
     <div class="srcinfo">${(inv.sources || []).map((s) => `<span><b>${s.label}</b> · ${esc(s.delay)}</span>`).join("")}</div>
+    ${inv.unparsed?.length ? `<div class="note" style="margin-top:12px">${inv.unparsed.length} déclaration(s) déposée(s) sur papier puis scannée(s) : non lisibles automatiquement.
+      Dernière : <a style="color:var(--accent)" href="${esc(inv.unparsed[0].url)}" target="_blank" rel="noopener">PDF du ${fdate(inv.unparsed[0].filed_at)}</a></div>` : ""}
     <div class="tabs">
       <button data-t="trades" class="${tab === "trades" ? "on" : ""}">Achats &amp; ventes</button>
       <button data-t="portfolio" class="${tab === "portfolio" ? "on" : ""}">Portefeuille</button>
@@ -280,7 +282,7 @@ async function viewSearch() {
   q.focus();
 }
 
-const invRow = (i) => `<a class="row" href="#/i/${esc(i.id)}"><img class="avatar" src="/api/photo/${esc(i.id)}" alt="" loading="lazy">
+const invRow = (i) => `<a class="row" href="#/i/${esc(i.id)}"><img class="avatar ${i.kind === "company" ? "logo" : ""}" src="/api/photo/${esc(i.id)}" alt="" loading="lazy">
   <div class="main"><div class="l1">${esc(i.name)}</div><div class="l2">${esc(i.subtitle || "")} · ${KINDS[i.kind]}</div></div>
   <div class="right"><div class="amt">${i.portfolio_value ? usd(i.portfolio_value) : ""}</div><div class="date">${ago(i.last_filing)}</div></div></a>`;
 

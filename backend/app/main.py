@@ -62,6 +62,8 @@ def investor(inv_id: str):
     s = _summary(inv)
     s["sources"] = [SOURCE_INFO[r["source"]] | {"source": r["source"]} for r in
                     db.query("SELECT DISTINCT source FROM filings WHERE investor_id=?", (inv_id,))]
+    s["unparsed"] = db.query("""SELECT f.url, f.filed_at FROM house_docs h JOIN filings f ON f.accession='HOUSE-'||h.doc_id
+                               WHERE h.investor_id=? AND h.status!='ok' ORDER BY f.filed_at DESC""", (inv_id,))
     s["sec_url"] = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={inv['cik']}" if inv.get("cik") else None
     return s
 
@@ -159,7 +161,7 @@ def search(q: str):
                           WHERE h.ticker=? AND h.put_call='' ORDER BY h.value DESC""", (t,))
     traders = db.query("SELECT * FROM trades WHERE ticker=? ORDER BY filed_at DESC LIMIT 50", (t,))
     for r in holders + traders:
-        r["investor_name"] = BY_ID[r["investor_id"]]["name"]
+        r["investor_name"], r["investor_kind"] = BY_ID[r["investor_id"]]["name"], BY_ID[r["investor_id"]]["kind"]
     return {"investors": invs, "ticker": t if (holders or traders) else None, "holders": holders, "trades": traders}
 
 

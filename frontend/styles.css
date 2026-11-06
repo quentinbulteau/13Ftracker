@@ -79,6 +79,7 @@ main { max-width: 760px; margin: 0 auto; padding: 0 16px 24px; }
 .row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--border); }
 .row:first-child { border-top: 0; }
 .row .avatar { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; flex: none; background: var(--surface-2); }
+.row .avatar.logo { object-fit: contain; padding: 5px; background: #f4f6f8; }
 .row .main { flex: 1; min-width: 0; }
 .row .l1 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .row .l1 .tk { font-weight: 800; }
