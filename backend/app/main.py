@@ -23,11 +23,11 @@ SOURCE_INFO = {
 
 # onglets de chaque fiche : les données officielles et la presse ne sont jamais mélangées
 TABS = {
-    "fund": [("trades", "Achats & ventes"), ("portfolio", "Portefeuille"), ("press", "Presse & rumeurs")],
-    "politician": [("trades", "Achats & ventes"), ("portfolio", "Portefeuille"), ("press", "Presse & rumeurs")],
-    "fr_investor": [("trades", "Déclarations AMF"), ("portfolio", "Médias & participations"), ("press", "Presse & rumeurs")],
-    "company": [("acquisitions", "Rachats"), ("portfolio", "Portefeuille 13F"), ("press", "Presse")],
-    "fr_company": [("trades", "Opérations des dirigeants"), ("press", "Presse")],
+    "fund": [("trades", "Opérations"), ("portfolio", "Portefeuille"), ("press", "Presse")],
+    "politician": [("trades", "Opérations"), ("portfolio", "Portefeuille"), ("press", "Presse")],
+    "fr_investor": [("trades", "Opérations"), ("portfolio", "Médias"), ("press", "Presse")],
+    "company": [("acquisitions", "Rachats"), ("portfolio", "13F"), ("press", "Presse")],
+    "fr_company": [("trades", "Dirigeants"), ("press", "Presse")],
 }
 
 

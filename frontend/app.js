@@ -86,7 +86,7 @@ const ago = (d) => {
   }
   if (days === 1) return "hier";
   if (days < 30) return `il y a ${days} j`;
-  return fdate(d);
+  return dt.getFullYear() === new Date().getFullYear() ? fdate(d, { day: "numeric", month: "short" }) : fdate(d, { month: "short", year: "numeric" });
 };
 const agoTime = (d) => {
   if (!d) return "—";
@@ -114,7 +114,13 @@ const STATUS = {
   declaration: ["Déclaration publique", "warn", "Dit par l'investisseur lui-même (réseaux sociaux, newsletter, interview) : aucune obligation légale, rien de vérifiable"],
   rumeur: ["Rumeur", "rumor", "Source secondaire ou information non vérifiée"],
 };
-const statusPill = (s) => { const [l, c, t] = STATUS[s] || [s, "neutral", ""]; return `<span class="pill ${c}" title="${esc(t)}">${l}</span>`; };
+const statusPill = (s) => {
+  const [l, , t] = STATUS[s] || [s, "", ""];
+  return s === "officiel" ? `<span class="stamp" title="${esc(t)}">${l}</span>` : `<span class="pencil" title="${esc(t)}">${l}, non vérifié</span>`;
+};
+const join = (...xs) => xs.filter(Boolean).join(", ");
+// tampon d'une déclaration officielle : source + date
+const stamp = (t, date) => `<span class="stamp" title="Déclaration officielle ${esc(SOURCES[t.source] || t.source)}${t.filed_at ? `, déposée le ${fdate(t.filed_at)}` : ""}">${SOURCES[t.source] || t.source} <small>${date}</small></span>`;
 
 const eur = (v) => usd(v).replace("$", " €").replace("  ", " ");
 const amount = (t) => {
@@ -143,7 +149,18 @@ function card(inv, { large = false, tag = "" } = {}) {
 
 const pct = (v) => `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} %`;
 const perfTag = (t) => t.perf_pct == null ? "" :
-  `<div class="perf ${t.perf_pct >= 0 ? "up" : "down"}" title="Cours ${t.price_ref.toFixed(2)} (dernière clôture avant publication, le ${fdate(t.price_ref_date)}) → ${t.price_now.toFixed(2)} aujourd'hui">${t.perf_pct >= 0 ? "▲" : "▼"} ${pct(t.perf_pct)} <span>depuis dépôt</span></div>`;
+  `<div class="perf ${t.perf_pct >= 0 ? "up" : "down"}" title="Cours ${t.price_ref.toFixed(2)} (dernière clôture avant publication, le ${fdate(t.price_ref_date)}) → ${t.price_now.toFixed(2)} aujourd'hui">${t.perf_pct >= 0 ? "▲" : "▼"} ${pct(t.perf_pct).replace("+", "")}</div>`;
+const PERF_LEGEND = `▲▼ évolution du cours depuis la publication de la déclaration`;
+// noms déclarés en majuscules (SEC, AMF) -> casse lisible
+const KEEP_UP = /^(SE|SA|SAS|SCA|LLC|LP|PLC|NV|AG|ETF|USA|US|II|III|ADR|REIT|SPDR|SICAV|NJJ|CMA|CGM|TF1|M6)$/;
+const SMALL_W = /^(de|du|des|la|le|les|et|of|and|the|à|au|aux|en|pour|par)$/;
+const tc = (x) => !x ? x : x.split(" ").map((w, i) => {
+  if (w !== w.toUpperCase() || !/[A-ZÀ-Ý]{2}/.test(w) || KEEP_UP.test(w.replace(/[.,]/g, ""))) return w;
+  const l = w.toLowerCase();
+  if (i > 0 && SMALL_W.test(l)) return l;
+  const t = l.replace(/(^|[-'’(/&.])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase());
+  return i > 0 ? t.replace(/^([DL])(['’])/, (m, a, b) => a.toLowerCase() + b) : t;
+}).join(" ");
 
 // date affichée: trimestre (13F), période du rapport (Form 4), date d'opération (élus, AMF)
 const tradeDate = (t) => t.source === "13F" ? quarter(t.trade_date)
@@ -153,47 +170,49 @@ const tradeDate = (t) => t.source === "13F" ? quarter(t.trade_date)
 // carte unique pour un 13F (toutes les variations du trimestre publiées d'un coup)
 function summaryRow(s, { isNew = false } = {}) {
   const parts = [[s.n_new, "nouvelle(s)"], [s.n_add, "renforcée(s)"], [s.n_reduce, "allégée(s)"], [s.n_exit, "sortie(s)"]]
-    .filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(" · ");
-  const top = (s.top || []).map((t) => `<span class="${(ACTIONS[t.action] || [])[1]}">${esc(t.ticker || t.issuer)}</span>`).join(" ");
+    .filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(", ");
+  const top = (s.top || []).map((t) => `<b class="${(ACTIONS[t.action] || [])[1]}-c">${esc(t.ticker || t.issuer)}</b>`).join(" ");
   return `<a class="row ${isNew ? "new" : ""}" href="#/i/${esc(s.investor_id)}/trades">
     ${avatar(s.investor_id, s.investor_logo)}
-    <div class="main">
-      <div class="l1"><span class="pill neutral">13F ${quarter(s.trade_date)}</span><span class="ell">${esc(s.investor_name)}</span></div>
-      <div class="l2">${parts} — ${s.n} variation(s)</div>
-      <div class="l2 top">Plus gros mouvements : ${top}</div>
-    </div>
-    <div class="right">
-      ${s.bought ? `<div class="amt buy-c">+${usd(s.bought)}</div>` : ""}
-      ${s.sold ? `<div class="amt sell-c">−${usd(s.sold)}</div>` : ""}
-      <div class="date">publié ${fdate(s.filed_at, { day: "numeric", month: "short" })}</div>
-    </div>
+    <div class="name">${esc(s.investor_name)}</div>
+    <div class="amt buy-c">${s.bought ? `+${usd(s.bought)}` : ""}</div>
+    <div class="what"><span class="pill neutral">Portefeuille ${quarter(s.trade_date)}</span><span class="ell">${parts}</span></div>
+    <div class="perf sell-c">${s.sold ? `−${usd(s.sold)}` : ""}</div>
+    <div class="meta">Plus gros mouvements : ${top}</div>
+    ${stamp({ source: "13F", filed_at: s.filed_at }, `publié ${fdate(s.filed_at, { day: "numeric", month: "short" })}`)}
   </a>`;
 }
 
 function tradeRow(t, { showInvestor = false, isNew = false, ownerFirst = false } = {}) {
   if (t.action === "SUMMARY") return summaryRow(t, { isNew });
   const [label, cls] = t.action === "OTHER" ? [t.asset_type || "Autre", "neutral"] : (ACTIONS[t.action] || [t.action, "neutral"]);
+  const amf = t.source === "AMF";
   const lead = showInvestor ? avatar(t.investor_id, t.investor_logo)
-    : `<div class="logo-tk">${esc((t.ticker || "—").replace(/\.(PA|L)$/, "").slice(0, 5))}</div>`;
-  const what = showInvestor
-    ? `${esc(t.investor_name)} · ${esc(t.source === "AMF" ? t.issuer : (t.ticker || t.issuer || ""))}`
-    : `<span class="tk">${esc(t.source === "AMF" ? (ownerFirst ? t.owner : t.issuer) : (t.ticker || ""))}</span> ${t.ticker || t.source === "AMF" ? "" : esc(t.issuer || "")}`;
-  const sub = t.source === "AMF"
-    ? [showInvestor || !ownerFirst ? t.owner : null, t.details].filter(Boolean).join(" · ")
-    : [t.issuer && (t.ticker || showInvestor) ? t.issuer : null, t.details].filter(Boolean).join(" · ");
+    : `<div class="logo-tk">${esc((t.ticker || t.issuer || "—").replace(/\.(PA|L)$/, "").slice(0, 5))}</div>`;
+  let name, what, meta;
+  if (showInvestor) {
+    name = t.investor_name;
+    what = amf ? t.issuer : (t.ticker ? `${t.ticker}, ${tc(t.issuer) || ""}` : tc(t.issuer));
+    meta = amf ? join(tc(t.owner), t.details) : t.details;
+  } else if (amf) {
+    name = ownerFirst ? tc(t.owner) : t.issuer;
+    what = ownerFirst ? "" : `par ${tc(t.owner)}`;
+    meta = t.details;
+  } else {
+    name = t.ticker || tc(t.issuer);
+    what = t.ticker ? tc(t.issuer) : "";
+    meta = t.details;
+  }
   const href = showInvestor ? `#/i/${esc(t.investor_id)}` : esc(t.url || "#");
   const target = showInvestor ? "" : ` target="_blank" rel="noopener"`;
-  return `<a class="row ${isNew ? "new" : ""} pos" href="${href}"${target}>
+  return `<a class="row ${isNew ? "new" : ""}" href="${href}"${target}>
     ${lead}
-    <div class="main">
-      <div class="l1"><span class="pill ${cls}">${esc(label)}</span><span class="ell">${what}</span></div>
-      <div class="l2">${esc(sub)}</div>
-    </div>
-    <div class="right">
-      <div class="amt">${amount(t)}</div>
-      ${perfTag(t)}
-      <div class="date">${tradeDate(t)} <span class="src">${SOURCES[t.source] || t.source}</span></div>
-    </div>
+    <div class="name">${esc(name)}</div>
+    <div class="amt">${amount(t)}</div>
+    <div class="what"><span class="pill ${cls}">${esc(label)}</span><span class="ell">${esc(what || "")}</span></div>
+    ${perfTag(t)}
+    <div class="meta">${esc((meta || "").replaceAll(" · ", ", "))}</div>
+    ${stamp(t, tradeDate(t))}
   </a>`;
 }
 
@@ -201,42 +220,43 @@ function tradeRow(t, { showInvestor = false, isNew = false, ownerFirst = false }
 function claimRow(u, { showEntity = false } = {}) {
   const dir = ACTIONS[u.direction];
   const title = u.kind === "media_deal" ? `Média : ${esc(u.target)}` : `${dir ? `<span class="pill ${dir[1]}">${dir[0]}</span>` : ""} ${esc(u.ticker || "")}`;
-  return `<div class="row unoff">
-    ${showEntity ? `<a href="#/i/${esc(u.entity)}">${avatar(u.entity)}</a>` : ""}
-    <div class="main">
-      <div class="l1 wrap">${statusPill(u.status)}${showEntity ? `<a class="ell" href="#/i/${esc(u.entity)}">${esc(u.entity_name)}</a>` : ""}<span class="when">${fdate(u.date, { month: "short", year: "numeric" })}</span></div>
+  return `<div class="row ${showEntity ? "block" : "nolead"} unoff">
+    ${showEntity ? `<a class="lead" href="#/i/${esc(u.entity)}">${avatar(u.entity)}</a>` : ""}
+    <div class="body">
+      <div class="headline">${statusPill(u.status)}${showEntity ? `<a class="tk" href="#/i/${esc(u.entity)}">${esc(u.entity_name)}</a>` : ""}<span class="when">${fdate(u.date, { month: "short", year: "numeric" })}</span></div>
       <div class="claim-title">${title}</div>
       <div class="l2 wrap-text">${esc(u.summary)}</div>
       ${u.where ? `<div class="l2 wrap-text">Où : ${esc(u.where)}</div>` : ""}
-      <div class="srcs">Sources : ${u.sources.map((s) => ext(s.url, s.title)).join(" · ")}</div>
+      <div class="srcs">Sources : ${u.sources.map((x) => ext(x.url, x.title)).join(", ")}</div>
     </div>
   </div>`;
 }
 
-const articleRow = (a, { showEntity = false } = {}) => `<a class="row article" href="${esc(a.url)}" target="_blank" rel="noopener">
-  ${showEntity ? avatar(a.entity_id) : ""}
-  <div class="main">
+const articleRow = (a, { showEntity = false } = {}) => `<a class="row ${showEntity ? "block" : "nolead"}" href="${esc(a.url)}" target="_blank" rel="noopener">
+  ${showEntity ? `<span class="lead">${avatar(a.entity_id)}</span>` : ""}
+  <div class="body">
     <div class="art-title">${esc(a.title)}</div>
-    <div class="l2">${showEntity ? `${esc(a.entity_name)} · ` : ""}${esc(a.source)} · ${a.published ? ago(a.published) : ""}</div>
+    <div class="l2">${esc(join(showEntity ? a.entity_name : "", a.source, a.published ? ago(a.published) : ""))}</div>
   </div>
 </a>`;
 
 function acquisitionRow(a, { showAcquirer = false } = {}) {
-  return `<div class="row acq">
-    ${showAcquirer ? `<a href="#/i/${esc(a.acquirer)}/acquisitions">${avatar(a.acquirer, true)}</a>` : `<div class="logo-tk">${esc(a.target.slice(0, 5))}</div>`}
-    <div class="main">
-      <div class="l1 wrap">${statusPill(a.status)}<span class="tk">${showAcquirer ? `${esc(a.acquirer_name)} → ` : ""}${esc(a.target)}</span></div>
-      <div class="l2 wrap-text">${esc(a.type)} · ${esc(a.amount)} · ${fdate(a.date.length > 7 ? a.date : a.date + (a.date.length === 4 ? "-07-01" : "-15"), a.date.length > 7 ? undefined : { month: "short", year: "numeric" })}</div>
+  const d = a.date.length > 7 ? fdate(a.date) : fdate(a.date + (a.date.length === 4 ? "-07-01" : "-15"), a.date.length === 4 ? { year: "numeric" } : { month: "long", year: "numeric" });
+  return `<div class="row block">
+    ${showAcquirer ? `<a class="lead" href="#/i/${esc(a.acquirer)}/acquisitions">${avatar(a.acquirer, true)}</a>` : `<div class="logo-tk">${esc(a.target.slice(0, 5))}</div>`}
+    <div class="body">
+      <div class="headline"><span class="tk">${showAcquirer ? `${esc(a.acquirer_name)} rachète ` : ""}${esc(a.target)}</span>${statusPill(a.status)}</div>
+      <div class="l2 wrap-text">${esc(join(a.type, a.amount, d))}</div>
       <div class="l2 wrap-text">${esc(a.summary)}</div>
-      <div class="srcs">Sources : ${a.sources.map((s) => ext(s.url, s.title)).join(" · ")}</div>
+      <div class="srcs">Sources : ${a.sources.map((x) => ext(x.url, x.title)).join(", ")}</div>
       ${a.articles?.length ? `<details><summary>${a.articles.length} article(s) de presse associé(s)</summary>
-        ${a.articles.map((x) => `<div class="mini-art">${ext(x.url, x.title)} <span>${esc(x.source)} · ${x.published ? fdate(x.published) : ""}</span></div>`).join("")}</details>` : ""}
+        ${a.articles.map((x) => `<div class="mini-art">${ext(x.url, x.title)} <span>${esc(join(x.source, x.published ? fdate(x.published) : ""))}</span></div>`).join("")}</details>` : ""}
     </div>
   </div>`;
 }
 
-const officialHead = (title, sub, link) => `<div class="section-head"><h2>${title} <span class="badge-off">Officiel</span></h2>${link ? `<a href="${link}">Tout voir</a>` : ""}</div><p class="sub">${sub}</p>`;
-const unofficialHead = (title, sub, link) => `<div class="section-head"><h2>${title} <span class="badge-unoff">Non officiel</span></h2>${link ? `<a href="${link}">Tout voir</a>` : ""}</div><p class="sub">${sub}</p>`;
+const officialHead = (title, sub, link) => `<div class="section-head"><h2>${title}</h2>${link ? `<a href="${link}">Tout voir</a>` : ""}</div><p class="sub">${sub}</p>`;
+const unofficialHead = (title, sub, link) => `<div class="section-head"><h2>${title} <span class="pencil">non vérifié</span></h2>${link ? `<a href="${link}">Tout voir</a>` : ""}</div><p class="sub">${sub}</p>`;
 const UNOFF_NOTE = `<div class="note unoff-note"><b>Non officiel.</b> Ces informations ne proviennent pas d'une déclaration réglementaire (SEC, AMF, Congrès) : articles de presse, propos tenus sur les réseaux sociaux ou rumeurs. À vérifier avant toute décision.</div>`;
 
 const skeleton = (n = 3) => `<div class="rail">${Array.from({ length: n }, () => `<div class="card skeleton"></div>`).join("")}</div>`;
@@ -275,7 +295,7 @@ async function viewHome() {
   const ids = new Set(list.map((i) => i.id));
   const fav = favs().map((id) => list.find((i) => i.id === id)).filter(Boolean);
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
-  const hot = (i) => i.last_filing && i.last_filing >= weekAgo ? `<span class="tag hot">Nouveau</span>` : "";
+  const hot = (i) => i.last_filing && i.last_filing >= weekAgo ? `<span class="tag stamp">Nouveau dépôt</span>` : "";
 
   let html = "";
   if (fav.length) html += `<section class="section"><h2>Mes suivis</h2><p class="sub">${space === "investor" ? "Investisseurs" : "Entreprises"} que vous suivez</p>
@@ -288,7 +308,7 @@ async function viewHome() {
       <div class="list">${a.slice(0, 6).map((x) => acquisitionRow(x, { showAcquirer: true })).join("")}</div></section>`;
   }
   html += `<section class="section">${officialHead(space === "investor" ? "Dernières déclarations" : "Déclarations des entreprises",
-    space === "investor" ? "SEC, AMF et Congrès américain : déclarations obligatoires" : "13F, Form 4 et opérations des dirigeants déclarées à l'AMF", "#/feed")}
+    space === "investor" ? `Déclarations obligatoires à la SEC, à l'AMF et au Congrès américain. ${PERF_LEGEND}.` : `13F, Form 4 et opérations des dirigeants déclarées à l'AMF. ${PERF_LEGEND}.`, "#/feed")}
     ${feed.length ? `<div class="list">${feed.map((t) => tradeRow(t, { showInvestor: true })).join("")}</div>` : `<div class="note">Aucune déclaration pour l'instant (ou premier chargement en cours).</div>`}</section>`;
 
   for (const [k, label] of Object.entries(cats)) {
@@ -332,14 +352,14 @@ async function viewInvestor(id, tab) {
         <button class="iconbtn" onclick="history.length > 1 ? history.back() : location.hash = '#/'" aria-label="Retour"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
         <button class="iconbtn ${isFav ? "on" : ""}" id="fav" aria-label="Suivre"><svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg></button>
       </div>
-      <div class="who"><div class="kicker">${SPACES[inv.type]?.label.slice(0, -1) || ""} · ${esc(catLabel(inv))}</div><h1>${esc(inv.name)}</h1><div class="firm">${esc(inv.subtitle || "")}</div></div>
+      <div class="who"><div class="kicker">${esc(catLabel(inv))}</div><h1>${esc(inv.name)}</h1><div class="firm">${esc(inv.subtitle || "")}</div></div>
     </div>
     <div class="stats">${statsFor(inv)}</div>
     ${inv.inactive ? `<div class="note warn-note" style="margin-top:12px">${esc(inv.inactive)}</div>` : ""}
-    <div class="srcinfo">${(inv.sources || []).map((s) => `<span><b>${s.label}</b> · ${esc(s.delay)}</span>`).join("")}</div>
+    ${inv.sources?.length ? `<details class="srcinfo"><summary>D'où viennent ces données ?</summary><ul>${inv.sources.map((s) => `<li><b>${s.label}</b> : ${esc(s.delay)}</li>`).join("")}</ul></details>` : ""}
     ${inv.unparsed?.length ? `<div class="note" style="margin-top:12px">${inv.unparsed.length} déclaration(s) déposée(s) sur papier puis scannée(s) : non lisibles automatiquement.
       Dernière : <a style="color:var(--accent)" href="${esc(inv.unparsed[0].url)}" target="_blank" rel="noopener">PDF du ${fdate(inv.unparsed[0].filed_at)}</a></div>` : ""}
-    <div class="tabs" style="grid-template-columns:repeat(${tabs.length},1fr)">
+    <div class="tabs">
       ${tabs.map((t) => `<button data-t="${t.id}" class="${t.id === tab ? "on" : ""} ${t.id === "press" ? "press-tab" : ""}">${esc(t.label)}</button>`).join("")}
     </div>
     <div id="tab-body"><div class="list skeleton" style="height:240px"></div></div>`;
@@ -377,7 +397,7 @@ async function renderTrades(inv, body, source = "") {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(t);
     }
-    body.innerHTML = chips + intro + [...groups].map(([k, ts]) => `<div class="day">${esc(k)}</div><div class="list">${ts.map((t) => tradeRow(t, { ownerFirst: inv.kind === "fr_company" })).join("")}</div>`).join("");
+    body.innerHTML = chips + intro + `<p class="legend">${PERF_LEGEND}</p>` + [...groups].map(([k, ts]) => `<div class="day">${esc(k)}</div><div class="list">${ts.map((t) => tradeRow(t, { ownerFirst: inv.kind === "fr_company" })).join("")}</div>`).join("");
   }
   body.querySelectorAll(".chip").forEach((b) => b.onclick = () => renderTrades(inv, body, b.dataset.s));
 }
@@ -430,8 +450,8 @@ async function renderPortfolio(inv, body) {
       return `<div class="row pos">
         <div class="logo-tk">${esc((p.ticker || p.issuer || "—").slice(0, 5))}</div>
         <div class="main">
-          <div class="l1 wrap"><span class="tk">${esc(p.ticker || p.issuer)}</span>${p.put_call ? `<span class="pill neutral">${esc(p.put_call)}</span>` : ""}${ch ? `<span class="pill ${ch[1]}">${ch[0]}</span>` : ""}${when}</div>
-          <div class="l2">${esc(p.issuer)} · ${num(p.shares)} titres</div>
+          <div class="l1 wrap"><span class="tk">${esc(p.ticker || tc(p.issuer))}</span>${p.put_call ? `<span class="pill neutral">${esc(p.put_call)}</span>` : ""}${ch ? `<span class="pill ${ch[1]}">${ch[0]}</span>` : ""}${when}</div>
+          <div class="l2">${esc(tc(p.issuer))}, ${num(p.shares)} titres</div>
           <div class="bar"><i style="width:${(p.weight / max) * 100}%"></i></div>
           ${f4}
         </div>
@@ -449,13 +469,13 @@ function renderFrHoldings(inv, pf, body) {
       <a class="row" href="#/i/${esc(c.company_id)}">${avatar(c.company_id, true)}
         <div class="main"><div class="l1"><span class="tk">${esc(c.company)}</span></div><div class="l2">${c.n} opération(s) déclarée(s) · dernière le ${fdate(c.last_date)}</div></div>
         <div class="right"><div class="date">${esc(c.ticker || "")}</div></div></a>`).join("")}</div>` : "")
-    + `<div class="day">Médias détenus <span class="badge-off">Données publiques</span></div>
+    + `<div class="day">Médias détenus <span class="stamp">Données publiques</span></div>
       <div class="note">Chaîne de détention reconstituée d'après ${ext(pf.media_source.url, pf.media_source.title)}, mise à jour fin 2024. Les rachats plus récents rapportés par la presse figurent plus bas, à part.</div>`
     + (pf.media.length ? [...groups].map(([k, ms]) => `<div class="day">${esc(k)} (${ms.length})</div><div class="list">${ms.map((m) => `
         <div class="row"><div class="logo-tk">${esc(m.media.slice(0, 4))}</div>
           <div class="main"><div class="l1"><span class="tk">${esc(m.media)}</span></div><div class="l2 wrap-text">${chain(m)}</div></div></div>`).join("")}</div>`).join("")
       : `<div class="empty">Aucun média répertorié dans la base du Monde diplomatique.</div>`)
-    + (pf.deals.length ? `<div class="day">Rachats récents rapportés <span class="badge-unoff">Non officiel</span></div><div class="list">${pf.deals.map((u) => claimRow(u)).join("")}</div>` : "");
+    + (pf.deals.length ? `<div class="day">Rachats récents rapportés <span class="pencil">non vérifié</span></div><div class="list">${pf.deals.map((u) => claimRow(u)).join("")}</div>` : "");
 }
 
 async function viewSearch() {
@@ -524,7 +544,7 @@ async function viewFeed(mode) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(t);
   }
-  body.innerHTML = `<p class="sub" style="color:var(--muted)">Déclarations obligatoires uniquement (SEC, AMF, Congrès), de la plus récemment publiée à la plus ancienne.</p>`
+  body.innerHTML = `<p class="legend">Déclarations obligatoires uniquement (SEC, AMF, Congrès), de la plus récemment publiée à la plus ancienne. ${PERF_LEGEND}.</p>`
     + (rows.length ? [...groups].map(([k, ts]) => `<div class="day">${esc(k)}</div><div class="list">${ts.map((t) => tradeRow(t, { showInvestor: true, isNew: seen && t.filed_at > seen })).join("")}</div>`).join("")
       : `<div class="empty">Aucune transaction pour l'instant.</div>`);
 }
@@ -542,17 +562,17 @@ async function viewAbout() {
       <div class="kv"><span>Transactions en base</span><span>${num(s.trades)}</span></div>
     </div>
     <div class="prose">
-      <h3><span class="badge-off">Officiel</span> Form 4 — SEC (≤ 2 jours ouvrés)</h3>
+      <h3><span class="stamp">Officiel</span> Form 4 — SEC (≤ 2 jours ouvrés)</h3>
       <p>Déposé par tout dirigeant ou actionnaire détenant plus de 10 % d'une société US : Berkshire, Icahn, Pershing… y déclarent leurs achats et ventes sur leurs grosses participations.</p>
-      <h3><span class="badge-off">Officiel</span> 13F — SEC (trimestriel, ≤ 45 jours)</h3>
+      <h3><span class="stamp">Officiel</span> 13F — SEC (trimestriel, ≤ 45 jours)</h3>
       <p>Photographie des positions longues US des gérants de plus de 100 M$. Les « achats/ventes » 13F sont déduits de la différence entre deux trimestres : ni date ni prix exacts.</p>
-      <h3><span class="badge-off">Officiel</span> AMF — déclarations des dirigeants (≤ 3 jours ouvrés)</h3>
+      <h3><span class="stamp">Officiel</span> AMF — déclarations des dirigeants (≤ 3 jours ouvrés)</h3>
       <p>Achats et ventes par les dirigeants des sociétés cotées à Paris et leurs proches (dont leurs holdings : ex. Compagnie de l'Odet pour la famille Bolloré).</p>
-      <h3><span class="badge-off">Officiel</span> STOCK Act — élus du Congrès (≤ 45 jours)</h3>
+      <h3><span class="stamp">Officiel</span> STOCK Act — élus du Congrès (≤ 45 jours)</h3>
       <p>Déclarations de la Chambre des représentants, montants par tranches. Le portefeuille affiché est une estimation.</p>
-      <h3><span class="badge-off">Données publiques</span> Médias détenus</h3>
+      <h3><span class="stamp">Données publiques</span> Médias détenus</h3>
       <p>Base « Médias français, qui possède quoi ? » du Monde diplomatique et d'Acrimed (licence ODC-By), mise à jour fin 2024.</p>
-      <h3><span class="badge-unoff">Non officiel</span> Presse & rumeurs</h3>
+      <h3><span class="pencil">non vérifié</span> Presse & rumeurs</h3>
       <p>Articles de presse (Google News), propos des investisseurs sur les réseaux sociaux et rumeurs : toujours affichés à part, avec leur statut (Presse, Déclaration publique, Rumeur) et leurs sources. Les rachats de startups sont vérifiés un par un.</p>
       <p style="color:var(--muted)">Ceci n'est pas un conseil en investissement. Photos : Wikipédia / Wikimedia Commons.</p>
     </div>`;
