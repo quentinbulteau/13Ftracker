@@ -30,8 +30,13 @@ _queued = {}
 _qlock = threading.Lock()
 
 
+_EXCHANGES = (".PA", ".L", ".AS", ".DE", ".MI", ".SW")
+
+
 def _yahoo_symbol(ticker):
-    return ticker.replace(".", "-").replace("/", "-")
+    if ticker.endswith(_EXCHANGES):  # cotation européenne : suffixe de place conservé (ex. VIV.PA)
+        return ticker
+    return ticker.replace(".", "-").replace("/", "-")  # classes US : BRK.B -> BRK-B
 
 
 def fetch(ticker):

@@ -1,54 +1,137 @@
-"""Liste des investisseurs suivis.
+"""Entités suivies : investisseurs d'un côté, entreprises de l'autre.
 
-kind:
-  - "fund"       : gérant / fonds -> 13F-HR (portefeuille trimestriel) + Form 4 (transactions sous 2 jours ouvrés)
-  - "company"    : entreprise qui dépose un 13F (participations stratégiques)
-  - "politician" : membre de la Chambre des représentants -> Periodic Transaction Reports (STOCK Act, ≤45 jours)
+type      : "investor" | "company"   (jamais mélangés dans l'interface)
+category  : investor -> "us_fund" (gérants US), "us_politician" (élus US), "fr" (investisseurs français)
+            company  -> "ai" (IA & tech), "fr" (sociétés françaises cotées)
+kind      : détail technique de la source de données
+  - "fund"        : 13F-HR (portefeuille trimestriel) + Form 4 (≤ 2 jours ouvrés)
+  - "politician"  : Periodic Transaction Reports de la Chambre (STOCK Act, ≤ 45 jours)
+  - "fr_investor" : déclarations de dirigeants AMF (via ses sociétés) + médias détenus (Le Monde diplomatique)
+  - "company"     : entreprise (13F éventuel + rachats de startups)
+  - "fr_company"  : société cotée à Paris -> déclarations des dirigeants AMF (≤ 3 jours ouvrés)
 
-photo:
-  - wiki        : titre de page Wikipédia (la photo principale est utilisée)
-  - photo_file  : nom de fichier Wikimedia Commons (prioritaire, ex. logos)
-  - on peut aussi déposer manuellement data/photos/<id>.jpg (prioritaire sur tout le reste)
+Photo : wiki (titre Wikipédia), photo_file (fichier Wikimedia Commons), ou data/photos/<id>.jpg.
+inactive : texte affiché quand la source officielle ne publie plus (ex. fonds fermé).
+press : requête Google News pour l'onglet « Presse & rumeurs ».
 """
 
-INVESTORS = [
-    # --- Gérants / fonds (SEC 13F + Form 4) ---
-    {"id": "buffett", "name": "Warren Buffett", "subtitle": "Berkshire Hathaway", "kind": "fund", "cik": 1067983, "wiki": "Warren_Buffett"},
-    {"id": "druckenmiller", "name": "Stanley Druckenmiller", "subtitle": "Duquesne Family Office", "kind": "fund", "cik": 1536411, "wiki": "Stanley_Druckenmiller"},
-    {"id": "ackman", "name": "Bill Ackman", "subtitle": "Pershing Square", "kind": "fund", "cik": 1336528, "wiki": "Bill_Ackman"},
-    {"id": "dalio", "name": "Ray Dalio", "subtitle": "Bridgewater Associates", "kind": "fund", "cik": 1350694, "wiki": "Ray_Dalio"},
-    {"id": "tepper", "name": "David Tepper", "subtitle": "Appaloosa", "kind": "fund", "cik": 1656456, "wiki": "David_Tepper"},
-    {"id": "klarman", "name": "Seth Klarman", "subtitle": "Baupost Group", "kind": "fund", "cik": 1061768, "wiki": "Seth_Klarman"},
-    {"id": "icahn", "name": "Carl Icahn", "subtitle": "Icahn Enterprises", "kind": "fund", "cik": 921669, "wiki": "Carl_Icahn"},
-    {"id": "lilu", "name": "Li Lu", "subtitle": "Himalaya Capital", "kind": "fund", "cik": 1709323, "wiki": "Li_Lu"},
-    {"id": "terrysmith", "name": "Terry Smith", "subtitle": "Fundsmith", "kind": "fund", "cik": 1569205, "wiki": "Terry_Smith_(fund_manager)"},
-    {"id": "cathiewood", "name": "Cathie Wood", "subtitle": "ARK Invest", "kind": "fund", "cik": 1697748, "wiki": "Cathie_Wood"},
-    {"id": "gates", "name": "Bill Gates", "subtitle": "Gates Foundation Trust", "kind": "fund", "cik": 1166559, "wiki": "Bill_Gates"},
-    {"id": "soros", "name": "George Soros", "subtitle": "Soros Fund Management", "kind": "fund", "cik": 1029160, "wiki": "George_Soros"},
-    {"id": "pabrai", "name": "Mohnish Pabrai", "subtitle": "Dalal Street LLC", "kind": "fund", "cik": 1549575, "wiki": "Mohnish_Pabrai"},
-    {"id": "coleman", "name": "Chase Coleman", "subtitle": "Tiger Global", "kind": "fund", "cik": 1167483, "wiki": "Chase_Coleman_III"},
-    {"id": "loeb", "name": "Dan Loeb", "subtitle": "Third Point", "kind": "fund", "cik": 1040273, "wiki": "Daniel_S._Loeb"},
-    {"id": "halvorsen", "name": "Andreas Halvorsen", "subtitle": "Viking Global", "kind": "fund", "cik": 1103804, "wiki": "Andreas_Halvorsen"},
-    {"id": "laffont", "name": "Philippe Laffont", "subtitle": "Coatue Management", "kind": "fund", "cik": 1135730, "wiki": "Philippe_Laffont"},
-    {"id": "mandel", "name": "Stephen Mandel", "subtitle": "Lone Pine Capital", "kind": "fund", "cik": 1061165, "wiki": "Stephen_Mandel"},
-    {"id": "gayner", "name": "Tom Gayner", "subtitle": "Markel Group", "kind": "fund", "cik": 1096343, "wiki": "Markel_Group"},
-
-    # --- Entreprises déposant un 13F ---
-    {"id": "alphabet", "name": "Google", "subtitle": "Alphabet Inc.", "kind": "company", "cik": 1652044, "photo_file": "Google_2015_logo.svg"},
-    {"id": "nvidia", "name": "NVIDIA", "subtitle": "NVIDIA Corp.", "kind": "company", "cik": 1045810, "photo_file": "Nvidia_logo.svg"},
-
-    # --- Élus (Chambre des représentants, STOCK Act) ---
-    {"id": "pelosi", "name": "Nancy Pelosi", "subtitle": "Représentante (D-CA)", "kind": "politician", "house": {"last": "Pelosi", "first": "Nancy", "state": "CA"}, "wiki": "Nancy_Pelosi"},
-    {"id": "gottheimer", "name": "Josh Gottheimer", "subtitle": "Représentant (D-NJ)", "kind": "politician", "house": {"last": "Gottheimer", "first": "Josh", "state": "NJ"}, "wiki": "Josh_Gottheimer"},
-    {"id": "sessions", "name": "Pete Sessions", "subtitle": "Représentant (R-TX)", "kind": "politician", "house": {"last": "Sessions", "first": "Pete", "state": "TX"}, "wiki": "Pete_Sessions"},
-    {"id": "austinscott", "name": "Austin Scott", "subtitle": "Représentant (R-GA)", "kind": "politician", "house": {"last": "Scott", "first": "Austin", "state": "GA"}, "wiki": "Austin_Scott_(politician)"},
-    {"id": "suozzi", "name": "Thomas Suozzi", "subtitle": "Représentant (D-NY)", "kind": "politician", "house": {"last": "Suozzi", "first": "Thomas", "state": "NY"}, "wiki": "Tom_Suozzi"},
-    {"id": "khanna", "name": "Ro Khanna", "subtitle": "Représentant (D-CA)", "kind": "politician", "house": {"last": "Khanna", "first": "Ro", "state": "CA"}, "wiki": "Ro_Khanna"},
-    {"id": "mccaul", "name": "Michael McCaul", "subtitle": "Représentant (R-TX)", "kind": "politician", "house": {"last": "McCaul", "first": "Michael", "state": "TX"}, "wiki": "Michael_McCaul"},
-    {"id": "bresnahan", "name": "Rob Bresnahan", "subtitle": "Représentant (R-PA)", "kind": "politician", "house": {"last": "Bresnahan", "first": "Rob", "state": "PA"}, "wiki": "Rob_Bresnahan"},
-    {"id": "moskowitz", "name": "Jared Moskowitz", "subtitle": "Représentant (D-FL)", "kind": "politician", "house": {"last": "Moskowitz", "first": "Jared", "state": "FL"}, "wiki": "Jared_Moskowitz"},
-    {"id": "hern", "name": "Kevin Hern", "subtitle": "Représentant (R-OK)", "kind": "politician", "house": {"last": "Hern", "first": "Kevin", "state": "OK"}, "wiki": "Kevin_Hern"},
+_FUNDS = [
+    ("buffett", "Warren Buffett", "Berkshire Hathaway", 1067983, "Warren_Buffett"),
+    ("burry", "Michael Burry", "Scion Asset Management", 1649339, "Michael_Burry"),
+    ("druckenmiller", "Stanley Druckenmiller", "Duquesne Family Office", 1536411, "Stanley_Druckenmiller"),
+    ("ackman", "Bill Ackman", "Pershing Square", 1336528, "Bill_Ackman"),
+    ("dalio", "Ray Dalio", "Bridgewater Associates", 1350694, "Ray_Dalio"),
+    ("tepper", "David Tepper", "Appaloosa", 1656456, "David_Tepper"),
+    ("klarman", "Seth Klarman", "Baupost Group", 1061768, "Seth_Klarman"),
+    ("icahn", "Carl Icahn", "Icahn Enterprises", 921669, "Carl_Icahn"),
+    ("marks", "Howard Marks", "Oaktree Capital", 949509, "Howard_Marks_(investor)"),
+    ("hohn", "Chris Hohn", "TCI Fund Management", 1647251, "Christopher_Hohn"),
+    ("akre", "Chuck Akre", "Akre Capital Management", 1112520, None),
+    ("rochon", "François Rochon", "Giverny Capital", 1641864, None),
+    ("watsa", "Prem Watsa", "Fairfax Financial", 915191, "Prem_Watsa"),
+    ("peltz", "Nelson Peltz", "Trian Fund Management", 1345471, "Nelson_Peltz"),
+    ("singer", "Paul Singer", "Elliott Management", 1791786, "Paul_Singer_(businessman)"),
+    ("duan", "Duan Yongping", "H&H International", 1759760, "Duan_Yongping"),
+    ("russo", "Tom Russo", "Gardner Russo & Quinn", 860643, None),
+    ("ainslie", "Lee Ainslie", "Maverick Capital", 934639, "Lee_Ainslie"),
+    ("sundheim", "Dan Sundheim", "D1 Capital Partners", 1747057, None),
+    ("gerstner", "Brad Gerstner", "Altimeter Capital", 1541617, None),
+    ("aschenbrenner", "Leopold Aschenbrenner", "Situational Awareness LP", 2045724, None),
+    ("lilu", "Li Lu", "Himalaya Capital", 1709323, "Li_Lu"),
+    ("terrysmith", "Terry Smith", "Fundsmith", 1569205, "Terry_Smith_(fund_manager)"),
+    ("cathiewood", "Cathie Wood", "ARK Invest", 1697748, "Cathie_Wood"),
+    ("gates", "Bill Gates", "Gates Foundation Trust", 1166559, "Bill_Gates"),
+    ("soros", "George Soros", "Soros Fund Management", 1029160, "George_Soros"),
+    ("pabrai", "Mohnish Pabrai", "Dalal Street LLC", 1549575, "Mohnish_Pabrai"),
+    ("coleman", "Chase Coleman", "Tiger Global", 1167483, "Chase_Coleman_III"),
+    ("loeb", "Dan Loeb", "Third Point", 1040273, "Daniel_S._Loeb"),
+    ("halvorsen", "Andreas Halvorsen", "Viking Global", 1103804, "Andreas_Halvorsen"),
+    ("laffont", "Philippe Laffont", "Coatue Management", 1135730, "Philippe_Laffont"),
+    ("mandel", "Stephen Mandel", "Lone Pine Capital", 1061165, "Stephen_Mandel"),
+    ("gayner", "Tom Gayner", "Markel Group", 1096343, "Markel_Group"),
 ]
 
-BY_ID = {i["id"]: i for i in INVESTORS}
-BY_CIK = {i["cik"]: i for i in INVESTORS if i.get("cik")}
+_POLITICIANS = [
+    ("pelosi", "Nancy Pelosi", "D-CA", "Pelosi", "Nancy", "CA", "Nancy_Pelosi"),
+    ("gottheimer", "Josh Gottheimer", "D-NJ", "Gottheimer", "Josh", "NJ", "Josh_Gottheimer"),
+    ("sessions", "Pete Sessions", "R-TX", "Sessions", "Pete", "TX", "Pete_Sessions"),
+    ("austinscott", "Austin Scott", "R-GA", "Scott", "Austin", "GA", "Austin_Scott_(politician)"),
+    ("suozzi", "Thomas Suozzi", "D-NY", "Suozzi", "Thomas", "NY", "Tom_Suozzi"),
+    ("khanna", "Ro Khanna", "D-CA", "Khanna", "Ro", "CA", "Ro_Khanna"),
+    ("mccaul", "Michael McCaul", "R-TX", "McCaul", "Michael", "TX", "Michael_McCaul"),
+    ("bresnahan", "Rob Bresnahan", "R-PA", "Bresnahan", "Rob", "PA", "Rob_Bresnahan"),
+    ("moskowitz", "Jared Moskowitz", "D-FL", "Moskowitz", "Jared", "FL", "Jared_Moskowitz"),
+    ("hern", "Kevin Hern", "R-OK", "Hern", "Kevin", "OK", "Kevin_Hern"),
+]
+
+# Sociétés françaises cotées : jeton = identifiant de la société dans la base BDIF de l'AMF
+_FR_COMPANIES = [
+    ("bollore_se", "Bolloré SE", "Holding · transport, médias", "RS00000987", "BOL.PA", "Bolloré"),
+    ("odet", "Compagnie de l'Odet", "Holding de tête du groupe Bolloré", "RS00000990", "ODET.PA", "Compagnie_de_l'Odet"),
+    ("vivendi", "Vivendi", "Groupe Bolloré · médias", "RS00002343", "VIV.PA", "Vivendi"),
+    ("canalplus", "Canal+", "Groupe Bolloré · TV (coté à Londres)", "RS00008525", "CAN.L", "Canal+_(company)"),
+    ("louishachette", "Louis Hachette Group", "Groupe Bolloré · édition, presse", "RS00008221", "ALHG.PA", "Louis_Hachette_Group"),
+    ("lagardere", "Lagardère", "Groupe Bolloré · Europe 1, JDD, Paris Match", "RS00003417", "MMB.PA", "Lagardère_Group"),
+    ("lvmh", "LVMH", "Groupe Arnault · Les Echos, Le Parisien", "RS00001689", "MC.PA", "LVMH"),
+    ("dior", "Christian Dior", "Holding du groupe Arnault", "RS00003361", "CDI.PA", "Christian_Dior_SE"),
+    ("kering", "Kering", "Groupe Pinault · Le Point (via Artémis)", "RS00003337", "KER.PA", "Kering"),
+    ("bouygues", "Bouygues", "Groupe Bouygues · TF1", "RS00001454", "EN.PA", "Bouygues"),
+    ("m6", "M6 Groupe", "Télévision", "RS00002148", "MMT.PA", "M6_Group"),
+    ("fnacdarty", "Fnac Darty", "Actionnaire de référence : D. Křetínský", "RS00005518", "FNAC.PA", "Fnac_Darty"),
+]
+
+# Investisseurs français : amf = noms à reconnaître parmi les déclarants AMF (en minuscules)
+#                          mdiplo = nom dans « Médias français, qui possède quoi ? »
+_FR_INVESTORS = [
+    ("bollore", "Vincent Bolloré", "Groupe Bolloré (Vivendi, Canal+, Louis Hachette)", "Vincent_Bolloré", "Vincent Bolloré",
+     ["bolloré", "bollore", "cornouaille", "compagnie de l'odet", "sofibol", "financière v", "omnium bolloré"]),
+    ("arnault", "Bernard Arnault", "LVMH · Financière Agache", "Bernard_Arnault", "Bernard Arnault",
+     ["arnault", "agache", "jean goujon"]),
+    ("pinault", "François Pinault", "Artémis · Kering", "François_Pinault", "François Pinault", ["pinault", "artémis", "artemis"]),
+    ("niel", "Xavier Niel", "Iliad · NJJ", "Xavier_Niel", "Xavier Niel", ["xavier niel", "njj"]),
+    ("saade", "Rodolphe Saadé", "CMA CGM · BFMTV, RMC, La Provence", "Rodolphe_Saadé", "Rodolphe Saadé", ["saadé", "saade", "cma cgm"]),
+    ("kretinsky", "Daniel Křetínský", "EPH · CMI France · Fnac Darty", "Daniel_Křetínský", "Daniel Křetínský",
+     ["kretinsky", "křetínský", "vesa equity", "ep equity"]),
+    ("drahi", "Patrick Drahi", "Altice", "Patrick_Drahi", "Patrick Drahi", ["drahi", "altice"]),
+    ("bouygues_fam", "Martin Bouygues", "Famille Bouygues · TF1", "Martin_Bouygues", "Famille Bouygues", ["scdm", "martin bouygues", "olivier bouygues"]),
+    ("pigasse", "Matthieu Pigasse", "Combat Media · Les Inrocks, Radio Nova", "Matthieu_Pigasse", "Matthieu Pigasse", ["pigasse"]),
+    ("sterin", "Pierre-Édouard Stérin", "Otium Capital", "Pierre-Édouard_Stérin", None, ["stérin", "sterin", "otium"]),
+]
+
+# Entreprises de l'IA : rachats de startups (liste vérifiée + presse), 13F si l'entreprise en dépose un
+_AI = [
+    ("alphabet", "Google", "Alphabet Inc.", 1652044, "Google_2015_logo.svg", None),
+    ("nvidia", "NVIDIA", "NVIDIA Corp.", 1045810, "Nvidia_logo.svg", None),
+    ("openai", "OpenAI", "Non cotée", None, "OpenAI_Logo.svg", "OpenAI"),
+    ("anthropic", "Anthropic", "Non cotée", None, "Anthropic_logo.svg", "Anthropic"),
+    ("mistral", "Mistral AI", "Non cotée · Paris", None, "Mistral_AI_logo_(2025–).svg", "Mistral_AI"),
+]
+
+ENTITIES = []
+for i, name, sub, cik, wiki in _FUNDS:
+    ENTITIES.append({"id": i, "name": name, "subtitle": sub, "type": "investor", "category": "us_fund", "kind": "fund",
+                     "cik": cik, "wiki": wiki, "press": f'"{name}" (stake OR buys OR sells OR position OR bet OR portfolio)', "lang": "en"})
+for i, name, party, last, first, state, wiki in _POLITICIANS:
+    ENTITIES.append({"id": i, "name": name, "subtitle": f"Chambre des représentants ({party})", "type": "investor",
+                     "category": "us_politician", "kind": "politician", "house": {"last": last, "first": first, "state": state},
+                     "wiki": wiki, "press": f'"{name}" (stock OR stocks OR trade OR shares)', "lang": "en"})
+for i, name, sub, wiki, mdiplo, amf in _FR_INVESTORS:
+    ENTITIES.append({"id": i, "name": name, "subtitle": sub, "type": "investor", "category": "fr", "kind": "fr_investor",
+                     "wiki": wiki, "mdiplo": mdiplo, "amf": amf, "lang": "fr",
+                     "press": f'"{name}" (rachat OR rachète OR participation OR actionnaire OR cède OR acquiert OR investit)'})
+for i, name, sub, cik, logo, wiki in _AI:
+    ENTITIES.append({"id": i, "name": name, "subtitle": sub, "type": "company", "category": "ai", "kind": "company",
+                     "cik": cik, "photo_file": logo, "wiki": wiki, "logo": True,
+                     "press": f'"{name}" (acquires OR acquisition OR acquire OR stake)', "lang": "en"})
+for i, name, sub, jeton, ticker, wiki in _FR_COMPANIES:
+    ENTITIES.append({"id": i, "name": name, "subtitle": sub, "type": "company", "category": "fr", "kind": "fr_company",
+                     "jeton": jeton, "ticker": ticker, "wiki": wiki, "logo": True, "lang": "fr",
+                     "press": f'"{name}" (rachat OR acquisition OR actionnaire OR cession OR participation)'})
+
+ENTITIES[1]["inactive"] = ("Scion a cessé de déposer des 13F après celui du 30 septembre 2025 : Michael Burry ne publie "
+                           "plus ses positions que sur son Substack « Cassandra Unchained » et sur X (voir Presse & rumeurs).")
+
+INVESTORS = ENTITIES  # compatibilité avec le reste du code
+BY_ID = {e["id"]: e for e in ENTITIES}
+BY_CIK = {e["cik"]: e for e in ENTITIES if e.get("cik")}
+FR_COMPANIES = [e for e in ENTITIES if e["kind"] == "fr_company"]
