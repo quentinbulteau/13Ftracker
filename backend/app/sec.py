@@ -101,7 +101,7 @@ def normalize_thousands():
     return fixed
 
 
-def refresh_13f(inv, subs=None, keep_periods=2):
+def refresh_13f(inv, subs=None, keep_periods=6):  # 6 trimestres : classement sur 12 mois
     cik = inv["cik"]
     subs = subs or submissions(cik)
     by_period = {}

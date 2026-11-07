@@ -30,6 +30,52 @@ Chaque investisseur a une photo (Wikipédia/Wikimedia Commons, ou initiales à d
 | `backend/data/curated.json` | saisi à la main, sourcé | rachats de startups de l'IA, rumeurs et déclarations publiques, rachats de médias récents |
 | Google News (RSS) | non officiel | articles de presse par investisseur / entreprise, et articles associés à chaque rachat |
 
+### Classement des gérants (3 / 6 / 12 mois)
+
+Calculé à partir des 13F des 6 derniers trimestres : à chaque fin de trimestre, les 60 plus grosses positions
+déclarées (pondérées par leur valeur) sont conservées jusqu'au trimestre suivant, avec les cours quotidiens.
+Deux mesures : *portefeuille déclaré* (rebalancement en fin de trimestre) et *copie* (rebalancement à la publication
+du 13F, ce qu'obtient réellement un suiveur). Référence : S&P 500 (SPY). Limites : ni ventes à découvert, ni cash,
+ni actifs hors US, ni opérations en cours de trimestre.
+
+### Alertes d'initiés (Top 100 US, CAC 40, DAX)
+
+| Marché | Source officielle | Délai |
+|---|---|---|
+| 100 premières sociétés américaines (liste SEC triée par capitalisation, sociétés déposant un 10-K) | SEC Form 4 | ≤ 2 jours ouvrés |
+| CAC 40 (36 valeurs déclarant à l'AMF ; Airbus, Stellantis, STMicro, ArcelorMittal déclarent à l'étranger) | AMF – BDIF | ≤ 3 jours ouvrés |
+| DAX (Airbus et Qiagen, de droit néerlandais, n'y figurent pas) | BaFin – Directors' Dealings | ≤ 3 jours ouvrés |
+
+Seuls les achats et ventes sur le marché sont retenus. Les ventes américaines programmées (plan 10b5-1) sont
+signalées. « Achats groupés » = au moins deux dirigeants d'une même société achètent en 30 jours.
+Les compositions du CAC 40 et du DAX sont dans `backend/app/insiders.py` (à mettre à jour lors des révisions d'indices).
+
+### Notifications Telegram (gratuites)
+
+L'app envoie un message à chaque mise à jour quand il se passe quelque chose : nouveau 13F d'un gérant suivi,
+Form 4 ou 13D/13G d'un investisseur, transactions d'élus, achats d'initiés groupés ou supérieurs à 1 M.
+Les déclarations françaises ne sont pas notifiées.
+
+1. Dans Telegram, ouvrir **@BotFather**, envoyer `/newbot`, choisir un nom : il donne un **jeton** (`123456:ABC…`).
+2. Envoyer un message quelconque à ce nouveau bot.
+3. Ouvrir `https://api.telegram.org/bot<JETON>/getUpdates` dans un navigateur : relever `"chat":{"id": …}`.
+4. Sur GitHub : Settings → Secrets and variables → Actions → ajouter `TELEGRAM_BOT_TOKEN` (le jeton) et
+   `TELEGRAM_CHAT_ID` (l'identifiant).
+
+Au premier passage l'app mémorise la date sans rien envoyer, pour ne pas rattraper d'anciennes déclarations.
+
+### Autres écrans
+
+- **Fiche action** (`#/s/TICKER`) : cours sur un an, toutes les opérations déclarées (fonds, élus, 13D/13G,
+  dirigeants), fonds détenteurs, éligibilité PEA, date des prochains résultats.
+- **Consensus des gérants** (onglet Classement) : actions les plus achetées / vendues par les fonds suivis au
+  dernier trimestre publié.
+- **Agenda** : échéance légale des 13F (45 jours après le trimestre) et résultats à venir des actions détenues
+  (calendrier Nasdaq).
+- **Filtre PEA** (onglet Initiés) : valeurs du CAC 40 et du DAX ; les actions américaines n'y sont pas éligibles.
+- Les investisseurs et sociétés françaises sont masqués des fils par défaut : filtre « Investisseurs français »
+  ou « Sociétés françaises » pour les voir.
+
 ### Ajouter une rumeur ou un rachat
 
 Éditer `backend/data/curated.json` : chaque entrée a une date, un statut (`officiel`, `presse`, `declaration`,

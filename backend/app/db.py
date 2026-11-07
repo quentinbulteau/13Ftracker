@@ -86,6 +86,8 @@ with _lock:
     _conn.executescript(SCHEMA)
     # migrations légères
     cols = {r[1] for r in _conn.execute("PRAGMA table_info(trades)")}
+    if "pct" not in cols:  # % du capital (déclarations 13D / 13G)
+        _conn.execute("ALTER TABLE trades ADD COLUMN pct REAL")
     if "actor_id" not in cols:  # investisseur suivi à l'origine d'une déclaration AMF (ex. Bolloré pour Vivendi)
         _conn.execute("ALTER TABLE trades ADD COLUMN actor_id TEXT")
         _conn.execute("CREATE INDEX IF NOT EXISTS ix_trades_actor ON trades(actor_id)")
