@@ -7,7 +7,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import db, media, photos, press, prices, scheduler
+import time
+
+from . import db, insiders, media, photos, press, prices, ranking, scheduler
 from .config import DISABLE_SCHEDULER, FRONTEND_DIR
 from .investors import BY_ID, INVESTORS
 
@@ -223,6 +225,23 @@ def entity_acquisitions(inv_id: str):
 @app.get("/api/acquisitions")
 def acquisitions():
     return press.acquisitions()
+
+
+_rank_cache = {"at": 0, "data": None}
+
+
+@app.get("/api/ranking")
+def get_ranking():
+    if time.time() - _rank_cache["at"] > 1800 or _rank_cache["data"] is None:
+        _rank_cache.update(at=time.time(), data=ranking.compute())
+    return _rank_cache["data"]
+
+
+@app.get("/api/insiders")
+def get_insiders(market: str | None = None, side: str | None = None, limit: int = 300):
+    """Achats et ventes d'initiés (dirigeants) sur les grandes valeurs US, CAC 40 et DAX : déclarations officielles."""
+    return {"markets": insiders.MARKETS, "clusters": insiders.clusters(),
+            "rows": prices.enrich(insiders.latest(market, side, limit))}
 
 
 @app.get("/api/press")

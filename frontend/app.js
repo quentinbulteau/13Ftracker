@@ -46,6 +46,8 @@ async function staticApi(path) {
     return rows.slice(0, +(q.get("limit") || 60));
   }
   if (parts[0] === "status") return getJSON("status.json");
+  if (parts[0] === "ranking") return getJSON("ranking.json");
+  if (parts[0] === "insiders") return getJSON("insiders.json");
   if (parts[0] === "search") {
     const v = (q.get("q") || "").trim();
     const all = await investors();
@@ -277,7 +279,7 @@ async function viewHome() {
   const cat = store.get(`cat:${space}`, "");
   const cats = SPACES[space].cats;
   $view.innerHTML = `
-    <h1 class="page-title">Explorer</h1>
+    <div class="title-row"><h1 class="page-title">Explorer</h1><a class="info-link" href="#/about">Sources et méthode</a></div>
     <a class="searchbar" href="#/search">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <span>Investisseur, entreprise ou ticker</span>
@@ -438,7 +440,7 @@ async function renderPortfolio(inv, body) {
     return;
   }
   const max = pf.positions[0]?.weight || 1;
-  body.innerHTML = `<div class="note">Portefeuille au <b>${fdate(pf.period)}</b> (${quarter(pf.period)}) · total ${usd(pf.total_value)} ·
+  body.innerHTML = (inv.kind === "fund" ? `<div id="perf-block"></div><div class="day">Positions déclarées</div>` : "") + `<div class="note">Portefeuille au <b>${fdate(pf.period)}</b> (${quarter(pf.period)}) · total ${usd(pf.total_value)} ·
     positions longues US uniquement (pas de shorts, ni d'actifs hors 13F).</div>
     <div class="list">${pf.positions.map((p) => {
       const ch = p.change ? ACTIONS[p.change] : null;
@@ -458,6 +460,7 @@ async function renderPortfolio(inv, body) {
         <div class="right"><div class="amt">${p.weight.toFixed(1)} %</div><div class="date">${usd(p.value)}</div></div>
       </div>`;
     }).join("")}</div>`;
+  if (inv.kind === "fund") renderPerformance(inv, document.getElementById("perf-block"));
 }
 
 function renderFrHoldings(inv, pf, body) {
@@ -476,6 +479,217 @@ function renderFrHoldings(inv, pf, body) {
           <div class="main"><div class="l1"><span class="tk">${esc(m.media)}</span></div><div class="l2 wrap-text">${chain(m)}</div></div></div>`).join("")}</div>`).join("")
       : `<div class="empty">Aucun média répertorié dans la base du Monde diplomatique.</div>`)
     + (pf.deals.length ? `<div class="day">Rachats récents rapportés <span class="pencil">non vérifié</span></div><div class="list">${pf.deals.map((u) => claimRow(u)).join("")}</div>` : "");
+}
+
+// ------------------------------------------------------------------ graphiques (méthode du skill dataviz)
+// Séries indexées sur une même base 100 (jamais deux axes), légende + étiquettes en bout de ligne,
+// réticule + infobulle au survol, tableau consultable sans survol.
+const svgEl = (tag, attrs = {}) => { const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+const fmtIdx = (v) => (v - 100).toLocaleString("fr-FR", { maximumFractionDigits: 1, minimumFractionDigits: 1, signDisplay: "always" }) + " %";
+
+function sparkline(points) {
+  if (!points?.length) return "";
+  const w = 72, h = 26, ys = points.map((p) => p[1]);
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+  const d = points.map((p, i) => `${i ? "L" : "M"}${(i / (points.length - 1)) * (w - 4) + 2},${h - 3 - ((p[1] - lo) / span) * (h - 6)}`).join(" ");
+  const last = points[points.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">
+    <path d="${d}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${w - 2}" cy="${h - 3 - ((last[1] - lo) / span) * (h - 6)}" r="3" fill="var(--series-1)" stroke="var(--sheet)" stroke-width="2"/></svg>`;
+}
+
+function lineChart(host, series, { height = 220 } = {}) {
+  // series: [{ name, color, points: [[date, valeur base 100], ...] }]
+  host.innerHTML = "";
+  const W = Math.max(280, host.clientWidth || 340), H = height, m = { t: 12, r: 64, b: 24, l: 40 };
+  const all = series.flatMap((s) => s.points.map((p) => p[1]));
+  let lo = Math.min(...all, 100), hi = Math.max(...all, 100);
+  const pad = (hi - lo) * 0.08 || 2; lo -= pad; hi += pad;
+  const dates = series[0].points.map((p) => p[0]);
+  const t0 = +new Date(dates[0]), t1 = +new Date(dates[dates.length - 1]);
+  const x = (d) => m.l + ((+new Date(d) - t0) / (t1 - t0 || 1)) * (W - m.l - m.r);
+  const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", height: H, role: "img", "aria-label": `Évolution comparée : ${series.map((s) => s.name).join(" et ")}` });
+  // grille et axe : traits fins, discrets
+  const step = (hi - lo) > 40 ? 20 : (hi - lo) > 16 ? 10 : 5;
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    svg.append(svgEl("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: v === 100 ? "base" : "grid" }));
+    const t = svgEl("text", { x: m.l - 6, y: y(v) + 4, class: "axis", "text-anchor": "end" }); t.textContent = fmtIdx(v).replace(",0", ""); svg.append(t);
+  }
+  const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
+  const every = Math.ceil(months.length / 4);
+  months.forEach((mo, i) => {
+    if (i % every) return;
+    const d = dates.find((x) => x.startsWith(mo));
+    const t = svgEl("text", { x: x(d), y: H - 6, class: "axis", "text-anchor": "middle" });
+    t.textContent = new Date(d + "T12:00").toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }); svg.append(t);
+  });
+  // séries + étiquette directe en bout de ligne (valeur en encre de texte, repère coloré)
+  const ends = [];
+  series.forEach((s) => {
+    svg.append(svgEl("path", { d: s.points.map((p, i) => `${i ? "L" : "M"}${x(p[0])},${y(p[1])}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const last = s.points[s.points.length - 1];
+    svg.append(svgEl("circle", { cx: x(last[0]), cy: y(last[1]), r: 4, fill: s.color, stroke: "var(--sheet)", "stroke-width": 2 }));
+    ends.push({ y: y(last[1]), v: last[1], s });
+  });
+  ends.sort((a, b) => a.y - b.y);
+  if (ends.length === 2 && ends[1].y - ends[0].y < 14) { ends[0].y -= 7; ends[1].y += 7; }
+  ends.forEach((e) => { const t = svgEl("text", { x: W - m.r + 8, y: e.y + 4, class: "endlabel" }); t.textContent = fmtIdx(e.v); svg.append(t); });
+  // réticule + infobulle : la cible est toute la zone, pas le trait
+  const cross = svgEl("line", { y1: m.t, y2: H - m.b, class: "cross", visibility: "hidden" });
+  svg.append(cross);
+  const hit = svgEl("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: "transparent", tabindex: 0 });
+  svg.append(hit);
+  const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true;
+  const show = (px) => {
+    const i = Math.max(0, Math.min(dates.length - 1, Math.round(((px - m.l) / (W - m.l - m.r)) * (dates.length - 1))));
+    const d = dates[i];
+    cross.setAttribute("x1", x(d)); cross.setAttribute("x2", x(d)); cross.setAttribute("visibility", "visible");
+    tip.replaceChildren();
+    const head = document.createElement("div"); head.className = "tip-date"; head.textContent = fdate(d); tip.append(head);
+    series.forEach((s) => {
+      const row = document.createElement("div"); row.className = "tip-row";
+      const key = document.createElement("i"); key.style.background = s.color;
+      const val = document.createElement("b"); val.textContent = fmtIdx(s.points[i]?.[1] ?? NaN);
+      const lab = document.createElement("span"); lab.textContent = s.name;
+      row.append(key, val, lab); tip.append(row);
+    });
+    tip.hidden = false;
+    tip.style.left = `${Math.min(Math.max(0, (x(d) / W) * host.clientWidth - 70), host.clientWidth - 150)}px`;
+  };
+  hit.addEventListener("pointermove", (ev) => { const r = svg.getBoundingClientRect(); show(((ev.clientX - r.left) / r.width) * W); });
+  hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  hit.addEventListener("focus", () => show(W - m.r));
+  hit.addEventListener("blur", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  const legend = document.createElement("div"); legend.className = "legend-row";
+  series.forEach((s) => { const it = document.createElement("span"); const k = document.createElement("i"); k.style.background = s.color; it.append(k, document.createTextNode(s.name)); legend.append(it); });
+  const wrap = document.createElement("div"); wrap.className = "chart"; wrap.append(svg, tip);
+  // vue tableau (accessibilité) : valeur à chaque fin de mois
+  const table = document.createElement("details"); table.className = "chart-table";
+  const sm = document.createElement("summary"); sm.textContent = "Voir les données"; table.append(sm);
+  const tb = document.createElement("table");
+  const hr = tb.insertRow(); ["Date", ...series.map((s) => s.name)].forEach((h) => { const th = document.createElement("th"); th.textContent = h; hr.append(th); });
+  dates.forEach((d, i) => {
+    if (i < dates.length - 1 && dates[i + 1].slice(0, 7) === d.slice(0, 7)) return;
+    const r = tb.insertRow(); r.insertCell().textContent = fdate(d);
+    series.forEach((s) => { r.insertCell().textContent = fmtIdx(s.points[i]?.[1] ?? NaN); });
+  });
+  table.append(tb);
+  host.append(legend, wrap, table);
+}
+
+// ------------------------------------------------------------------ classement
+const WIN_LABEL = { 3: "3 mois", 6: "6 mois", 12: "12 mois" };
+let RANKING = null;
+const ranking = async () => (RANKING = RANKING || await api("/ranking"));
+const signed = (v) => v == null ? "—" : `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} %`;
+
+async function viewRanking() {
+  const win = store.get("rankWin", "12");
+  $view.innerHTML = `<h1 class="page-title">Classement</h1>
+    <p class="lede">Les gérants dont le portefeuille déclaré (13F) a le plus progressé, comparés au S&amp;P 500.</p>
+    ${segmented("rwin", Object.entries(WIN_LABEL), win)}
+    <div id="rank-body"><div class="list skeleton" style="height:400px;margin-top:14px"></div></div>`;
+  bind("#rwin", (k) => { store.set("rankWin", k); viewRanking(); });
+  const r = await ranking();
+  const w = r.windows?.[win];
+  const body = document.getElementById("rank-body");
+  if (!w?.rows?.length) { body.innerHTML = `<div class="empty">Classement indisponible pour l'instant : il faut l'historique des cours, récupéré au premier passage.</div>`; return; }
+  body.innerHTML = `
+    <div class="bench">S&amp;P 500 sur la période : <b>${signed(w.bench)}</b><span>du ${fdate(w.start)} au ${fdate(w.end)}</span></div>
+    <div class="list">${w.rows.map((x) => `
+      <a class="row rank-row" href="#/i/${esc(x.id)}/portfolio">
+        <div class="lead rank-n">${x.rank}</div>
+        <div class="name">${esc(x.name)}</div>
+        <div class="amt ${x.perf >= 0 ? "buy-c" : "sell-c"}">${signed(x.perf)}</div>
+        <div class="what"><span class="ell">${esc(x.subtitle)}</span></div>
+        <div class="perf">${sparkline(x.series)}</div>
+        <div class="meta">${x.vs_bench >= 0 ? "Bat" : "Sous"} le S&amp;P 500 de ${Math.abs(x.vs_bench).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} pts${x.perf_copy != null ? `, copie : ${signed(x.perf_copy)}` : ""}${x.coverage < 70 ? `, calcul sur ${x.coverage} % du portefeuille` : ""}</div>
+      </a>`).join("")}</div>
+    <details class="note method"><summary><b>Comment c'est calculé</b></summary>
+      <p>À chaque fin de trimestre, on prend les positions déclarées dans le 13F (les 60 plus grosses, pondérées par leur valeur), on les conserve jusqu'au trimestre suivant et on calcule la performance avec les cours quotidiens.</p>
+      <p><b>Copie</b> : même calcul, mais en n'achetant qu'à la publication du 13F (jusqu'à 45 jours plus tard) : c'est ce qu'un particulier qui suit le gérant aurait réellement obtenu.</p>
+      <p>Limites : les 13F ne montrent ni les ventes à découvert, ni le cash, ni les actifs hors États-Unis, ni les allers-retours en cours de trimestre. Un gérant très couvert (Bridgewater, Citadel…) peut donc paraître plus volatil qu'il ne l'est. Les élus et les investisseurs français ne publient pas de portefeuille complet : ils ne sont pas classés.</p>
+    </details>`;
+}
+
+async function renderPerformance(inv, host) {
+  const r = await ranking().catch(() => null);
+  const f = r?.funds?.[inv.id];
+  if (!f) { host.remove(); return; }
+  const win = store.get("perfWin", "12");
+  const w = r.windows[win];
+  const row = w?.rows.find((x) => x.id === inv.id);
+  const aum = f.aum.slice().reverse();
+  host.innerHTML = `<div class="day">Performance du portefeuille déclaré</div>
+    ${segmented("pwin", Object.entries(WIN_LABEL), win)}
+    ${row ? `<div class="perf-head"><div><span>${WIN_LABEL[win]}</span><b class="${row.perf >= 0 ? "buy-c" : "sell-c"}">${signed(row.perf)}</b></div>
+      <div><span>S&amp;P 500</span><b>${signed(w.bench)}</b></div>
+      <div><span>Rang</span><b>${row.rank} / ${w.rows.length}</b></div></div>
+      <div id="perf-chart"></div>` : `<div class="empty">Historique insuffisant sur ${WIN_LABEL[win]}.</div>`}
+    <div class="day">Valeur déclarée à chaque trimestre</div>
+    <div class="list">${aum.map((a, i) => {
+      const prev = aum[i + 1]?.value;
+      const ch = prev ? (a.value / prev - 1) * 100 : null;
+      return `<div class="row simple"><div class="logo-tk">${quarter(a.period).replace(" 20", "·")}</div>
+        <div class="name">${quarter(a.period)}</div><div class="amt">${usd(a.value)}</div>
+        <div class="meta">au ${fdate(a.period)}</div><div class="perf ${ch == null ? "" : ch >= 0 ? "up" : "down"}">${ch == null ? "" : signed(ch)}</div></div>`;
+    }).join("")}</div>
+    <p class="legend">La valeur déclarée varie avec les cours mais aussi avec les apports et retraits des clients du fonds : seule la courbe ci-dessus mesure la performance.</p>`;
+  bind("#pwin", (k) => { store.set("perfWin", k); renderPerformance(inv, host); });
+  if (row) lineChart(document.getElementById("perf-chart"), [
+    { name: inv.name, color: "var(--series-1)", points: row.series },
+    { name: "S&P 500", color: "var(--series-2)", points: w.bench_series },
+  ]);
+}
+
+// ------------------------------------------------------------------ initiés
+const MARKET_SRC = { US: "SEC", FR: "AMF", DE: "BaFin" };
+const cur = (v, c) => v == null ? "—" : c === "EUR" ? eur(v) : usd(v);
+
+function insiderRow(t) {
+  const [label, cls] = ACTIONS[t.action] || [t.action, "neutral"];
+  const role = [t.role, t.planned ? "vente programmée (plan 10b5-1)" : ""].filter(Boolean).join(", ");
+  return `<a class="row ${t.value >= 1e6 && t.action === "BUY" ? "big" : ""}" href="${esc(t.url)}" target="_blank" rel="noopener">
+    <div class="logo-tk">${esc((t.ticker || "").replace(/\.(PA|DE|L)$/, "").slice(0, 5))}</div>
+    <div class="name">${esc(t.issuer)}</div>
+    <div class="amt">${cur(t.value, t.currency)}</div>
+    <div class="what"><span class="pill ${cls}">${label}</span><span class="ell">${esc(tc(t.insider || ""))}</span></div>
+    ${perfTag(t)}
+    <div class="meta">${esc(role)}</div>
+    <span class="stamp" title="Déclaration officielle, publiée le ${fdate(t.filed_at)}">${MARKET_SRC[t.market]} <small>${fdate(t.trade_date, { day: "numeric", month: "short" })}</small></span>
+  </a>`;
+}
+
+async function viewInsiders() {
+  const side = store.get("insSide", "BUY");
+  const market = store.get("insMarket", "");
+  $view.innerHTML = `<h1 class="page-title">Initiés</h1>
+    <p class="lede">Achats et ventes de leurs propres actions par les dirigeants des 100 plus grandes sociétés américaines, du CAC 40 et du DAX.</p>
+    ${segmented("iside", [["BUY", "Achats"], ["SELL", "Ventes"], ["", "Tout"]], side)}
+    ${chipsHtml("imarket", [["", "Tous marchés"], ["US", "Top 100 US"], ["FR", "CAC 40"], ["DE", "DAX"]], market)}
+    <div id="ins-body"><div class="list skeleton" style="height:400px;margin-top:14px"></div></div>`;
+  bind("#iside", (k) => { store.set("insSide", k); viewInsiders(); });
+  bind("#imarket", (k) => { store.set("insMarket", k); viewInsiders(); });
+  const d = await api(`/insiders?limit=600`);
+  const rows = d.rows.filter((r) => (!side || r.action === side) && (!market || r.market === market));
+  const cl = d.clusters.filter((c) => !market || c.market === market);
+  const groups = new Map();
+  for (const t of rows) {
+    const k = `Publié ${ago((t.filed_at || "").slice(0, 10))}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(t);
+  }
+  document.getElementById("ins-body").innerHTML =
+    (side !== "SELL" && cl.length ? `<section class="section"><h2>Achats groupés</h2>
+      <p class="sub">Au moins deux dirigeants d'une même société ont acheté sur les 30 derniers jours : c'est le signal d'initiés le plus suivi.</p>
+      <div class="list">${cl.map((c) => `<div class="row simple">
+        <div class="logo-tk">${esc((c.ticker || "").replace(/\.(PA|DE|L)$/, "").slice(0, 5))}</div>
+        <div class="name">${esc(c.issuer)}</div><div class="amt">${cur(c.total, c.currency)}</div>
+        <div class="meta">${c.n} dirigeants : ${esc(c.insiders.map(tc).join(", "))}</div><div class="perf">dernier achat ${fdate(c.last, { day: "numeric", month: "short" })}</div></div>`).join("")}</div></section>` : "")
+    + `<p class="legend">${side === "SELL" ? "Les ventes ont souvent des raisons personnelles (impôts, diversification) ; aux États-Unis, beaucoup sont programmées des mois à l'avance (plan 10b5-1)." : "Un achat sur le marché est un signal plus parlant qu'une vente : un dirigeant n'achète que s'il croit que le cours va monter."} ${PERF_LEGEND}.</p>`
+    + (rows.length ? [...groups].map(([k, ts]) => `<div class="day">${esc(k)}</div><div class="list">${ts.map(insiderRow).join("")}</div>`).join("")
+      : `<div class="empty">Aucune opération sur la période.</div>`);
 }
 
 async function viewSearch() {
@@ -609,6 +823,8 @@ async function route() {
     await investors();  // charge la liste (et les photos) avant tout affichage
     if (page === "i" && id) await viewInvestor(id, tab);
     else if (page === "search") await viewSearch();
+    else if (page === "ranking") await viewRanking();
+    else if (page === "insiders") await viewInsiders();
     else if (page === "feed") await viewFeed(id);
     else if (page === "about") await viewAbout();
     else await viewHome();
@@ -618,7 +834,7 @@ async function route() {
 }
 window.addEventListener("hashchange", route);
 route();
-setInterval(() => { INVESTORS = null; pollNew(); }, 60_000);
+setInterval(() => { INVESTORS = null; RANKING = null; pollNew(); }, 60_000);
 pollNew();
 // demande la permission de notifier au premier ajout en favori
 document.addEventListener("click", (e) => {

@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import amf, db, house, media, photos, press, prices, sec
+from . import amf, db, house, insiders, media, photos, press, prices, ranking, sec
 from .config import FRONTEND_DIR
 from .investors import INVESTORS
 
@@ -47,7 +47,7 @@ def scrape():
         db.set_meta("last_house_refresh", _now())
     except Exception:
         log.exception("house")
-    for name, fn in (("amf", amf.refresh), ("presse", press.refresh), ("médias", media.refresh)):
+    for name, fn in (("amf", amf.refresh), ("initiés", insiders.refresh), ("presse", press.refresh), ("médias", media.refresh)):
         try:
             fn()
         except Exception:
@@ -61,6 +61,10 @@ def refresh_prices():
     recent = {r["ticker"] for r in db.query(
         "SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL AND filed_at >= date('now','-400 days')")}
     todo += [t for t in prices.stale(recent - set(todo), max_age=12 * 3600)][:PRICE_BATCH]
+    # classement : tout ticker jamais téléchargé l'est maintenant (sinon perf faussée), les autres une fois par jour
+    rank = ranking.needed_tickers() | {r["ticker"] for r in insiders.latest(limit=2000) if r["ticker"]}
+    todo += prices.stale(rank - set(todo), max_age=10 ** 12)
+    todo += [t for t in prices.stale(rank - set(todo), max_age=86400)][:PRICE_BATCH]
     log.info("cours à rafraîchir: %d", len(todo))
     for t in todo:
         prices.fetch(t)
@@ -111,6 +115,8 @@ def write_site(out: Path):
         _write(a / f"feed-{t}.json", api.feed(limit=FEED_LIMIT, type=t))
         _write(a / f"press-{t}.json", api.press_feed(type=t, limit=80))
     _write(a / "acquisitions.json", api.acquisitions())
+    _write(a / "ranking.json", ranking.compute())
+    _write(a / "insiders.json", api.get_insiders(limit=600))
 
     tickers = {r["ticker"] for r in db.query("SELECT DISTINCT ticker FROM holdings WHERE ticker IS NOT NULL "
                                              "UNION SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL")}

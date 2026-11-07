@@ -241,7 +241,7 @@ summary { color: var(--ink-2); cursor: pointer; }
 
 /* ---------- barre d'onglets ---------- */
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(4, 1fr);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr);
   height: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
   background: var(--sheet); border-top: 1px solid var(--rule);
 }
@@ -269,3 +269,42 @@ summary { color: var(--ink-2); cursor: pointer; }
 .row.pos { align-items: start; }
 .row .what { align-items: flex-start; }
 .row .what .ell { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
+
+/* ---------- graphiques (palette validée par le script du skill dataviz) ---------- */
+:root { --series-1: #2f3fb0; --series-2: #c94a7d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --series-1: #6f80ea; --series-2: #d55181; } }
+.chart { position: relative; }
+.chart svg { display: block; overflow: visible; }
+.chart .grid { stroke: var(--rule); stroke-width: 1; }
+.chart .base { stroke: var(--ink-2); stroke-width: 1; opacity: .6; }
+.chart .axis { fill: var(--ink-2); font-size: 11px; font-family: var(--ui); }
+.chart .endlabel { fill: var(--ink); font-size: 12px; font-weight: 700; font-family: var(--cond); font-stretch: 88%; }
+.chart .cross { stroke: var(--ink-2); stroke-width: 1; }
+.tip { position: absolute; top: 0; min-width: 140px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 9px; font-size: 12.5px; pointer-events: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .18); }
+.tip-date { color: var(--ink-2); margin-bottom: 3px; }
+.tip-row { display: flex; align-items: center; gap: 6px; }
+.tip-row i, .legend-row i { display: inline-block; width: 12px; height: 2.5px; border-radius: 2px; }
+.tip-row b { font-variant-numeric: tabular-nums; }
+.tip-row span { color: var(--ink-2); }
+.legend-row { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); margin: 8px 0 4px; }
+.legend-row span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-table table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.chart-table th, .chart-table td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--rule); }
+.chart-table th:first-child, .chart-table td:first-child { text-align: left; }
+.spark { display: block; }
+
+/* ---------- classement, initiés ---------- */
+.title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.info-link { color: var(--stamp); font-size: 13.5px; font-weight: 650; }
+.lede { color: var(--ink-2); margin: -6px 0 4px; max-width: 60ch; }
+.rank-n { width: 40px; height: 40px; display: grid; place-items: center; font-family: var(--cond); font-stretch: 80%; font-weight: 800; font-size: 20px; color: var(--ink-2); }
+.rank-row:nth-child(-n+3) .rank-n { color: var(--stamp); }
+.rank-row .meta { white-space: normal; }
+.bench { margin: 14px 2px 10px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.bench span { color: var(--ink-2); font-size: 12.5px; }
+.perf-head { display: grid; grid-template-columns: repeat(3, 1fr); margin: 12px 0 4px; }
+.perf-head div { display: flex; flex-direction: column; }
+.perf-head span { color: var(--ink-2); font-size: 12px; }
+.perf-head b { font-family: var(--cond); font-stretch: 88%; font-size: 20px; }
+.row.big { box-shadow: inset 3px 0 0 var(--buy); }
+.method p { margin: 8px 0 0; }
