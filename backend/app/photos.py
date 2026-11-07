@@ -1,4 +1,5 @@
 """Photos des investisseurs: Wikipédia / Wikimedia Commons, mises en cache sur disque."""
+import hashlib
 import logging
 from urllib.parse import quote
 
@@ -15,6 +16,17 @@ def cached(inv_id):
         if p.exists() and p.stat().st_size > 0:
             return p
     return None
+
+
+def initials_svg(inv):
+    """Avatar de remplacement (initiales sur dégradé) quand aucune photo libre n'existe."""
+    initials = "".join(w[0] for w in inv["name"].split()[:2]).upper()
+    hue = int(hashlib.md5(inv["id"].encode()).hexdigest()[:2], 16) * 360 // 256
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl({hue},45%,32%)"/>
+<stop offset="1" stop-color="hsl({(hue + 40) % 360},50%,14%)"/></linearGradient></defs>
+<rect width="300" height="400" fill="url(#g)"/>
+<text x="150" y="215" font-family="Inter,Arial,sans-serif" font-size="110" font-weight="700" fill="rgba(255,255,255,.85)" text-anchor="middle">{initials}</text></svg>"""
 
 
 def _source_urls(inv):

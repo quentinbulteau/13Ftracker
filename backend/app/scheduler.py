@@ -35,6 +35,7 @@ def refresh_one(inv_id):
 def full_refresh():
     with _busy:
         log.info("rafraîchissement complet…")
+        sec.normalize_thousands()
         for inv in INVESTORS:
             refresh_one(inv["id"])
         try:

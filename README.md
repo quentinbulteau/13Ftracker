@@ -30,7 +30,22 @@ Chaque transaction affiche la variation du cours entre la **dernière clôture a
 et le dernier cours connu. Cours issus de l'API publique non officielle de Yahoo Finance, en cache 15 min
 (données gratuites, retardées, sans garantie de disponibilité).
 
-## Lancer
+## Version en ligne, sans ordinateur (GitHub Actions + Pages)
+
+Le workflow `.github/workflows/update.yml` scrape les déclarations **toutes les 30 min** sur les serveurs de GitHub
+et publie l'app sur GitHub Pages (`https://<compte>.github.io/13Ftracker/`). Gratuit si le dépôt est public.
+
+Mise en place (une fois) :
+1. Settings → General → Danger Zone → **Change visibility → Public**.
+2. Settings → Pages → Source : **GitHub Actions**.
+3. Settings → Secrets and variables → Actions → **New repository secret** : `SEC_USER_AGENT` = `Nom email@domaine`.
+4. Actions → « Mise à jour des données » → **Run workflow** (le premier passage prend ~15 min).
+
+Dans cette version figée, les données sont des fichiers JSON (`python -m backend.app.export --out site`),
+la recherche se fait sur le téléphone. GitHub désactive les tâches planifiées d'un dépôt public après
+60 jours sans commit : il suffit alors de cliquer sur « Enable workflow » dans l'onglet Actions.
+
+## Lancer en local (temps réel, 1 min)
 
 ```bash
 pip install -r backend/requirements.txt

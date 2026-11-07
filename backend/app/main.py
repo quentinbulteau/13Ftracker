@@ -1,11 +1,10 @@
 """API HTTP + service du front."""
-import hashlib
 import logging
 import threading
 from collections import defaultdict
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import db, photos, prices, scheduler
@@ -183,6 +182,12 @@ def search(q: str):
         return {"investors": [], "ticker": None}
     invs = [_summary(i) for i in INVESTORS if ql in i["name"].lower() or ql in (i.get("subtitle") or "").lower()]
     t = q.strip().upper()
+    act = ticker_activity(t)
+    return {"investors": invs, "ticker": t if (act["holders"] or act["trades"]) else None, **act}
+
+
+def ticker_activity(t):
+    """Qui détient le ticker (dernier 13F) et qui l'a acheté/vendu récemment."""
     holders = db.query("""SELECT h.investor_id, h.issuer, h.shares, h.value, h.period FROM holdings h
                           JOIN (SELECT investor_id, MAX(period) p FROM holdings GROUP BY investor_id) m
                           ON m.investor_id=h.investor_id AND m.p=h.period
@@ -190,7 +195,7 @@ def search(q: str):
     traders = prices.enrich(db.query("SELECT * FROM trades WHERE ticker=? ORDER BY filed_at DESC LIMIT 50", (t,)))
     for r in holders + traders:
         r["investor_name"], r["investor_kind"] = BY_ID[r["investor_id"]]["name"], BY_ID[r["investor_id"]]["kind"]
-    return {"investors": invs, "ticker": t if (holders or traders) else None, "holders": holders, "trades": traders}
+    return {"holders": holders, "trades": traders}
 
 
 @app.get("/api/photo/{inv_id}")
@@ -200,14 +205,13 @@ def photo(inv_id: str):
     if p:
         return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
     threading.Thread(target=photos.fetch, args=(inv,), daemon=True).start()
-    initials = "".join(w[0] for w in inv["name"].split()[:2]).upper()
-    hue = int(hashlib.md5(inv_id.encode()).hexdigest()[:2], 16) * 360 // 256
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl({hue},45%,32%)"/>
-<stop offset="1" stop-color="hsl({(hue + 40) % 360},50%,14%)"/></linearGradient></defs>
-<rect width="300" height="400" fill="url(#g)"/>
-<text x="150" y="215" font-family="Inter,Arial,sans-serif" font-size="110" font-weight="700" fill="rgba(255,255,255,.85)" text-anchor="middle">{initials}</text></svg>"""
-    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
+    return Response(photos.initials_svg(inv), media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/config.js")
+def config_js():
+    # mode serveur (live). La version publiée sur GitHub Pages remplace ce fichier par TRACKER_STATIC = true.
+    return PlainTextResponse("window.TRACKER_STATIC = false;", media_type="text/javascript")
 
 
 @app.get("/api/status")

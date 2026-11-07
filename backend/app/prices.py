@@ -18,6 +18,7 @@ from . import db, http
 
 log = logging.getLogger("prices")
 STALE_SECONDS = 15 * 60
+BACKGROUND = True  # False pendant l'export statique: les cours sont rafraîchis de façon synchrone
 
 db.execute("""CREATE TABLE IF NOT EXISTS prices (
     ticker TEXT NOT NULL, date TEXT NOT NULL, close REAL, PRIMARY KEY (ticker, date))""")
@@ -73,7 +74,7 @@ def _worker():
 def request(tickers, max_age=STALE_SECONDS, prio=0):
     """Met en file les tickers absents du cache ou trop anciens (non bloquant)."""
     tickers = {t for t in tickers if t}
-    if not tickers:
+    if not tickers or not BACKGROUND:
         return
     fresh = {r["ticker"] for r in db.query(
         f"SELECT ticker FROM price_meta WHERE ticker IN ({','.join('?' * len(tickers))}) AND fetched_at > ?",
@@ -83,6 +84,16 @@ def request(tickers, max_age=STALE_SECONDS, prio=0):
             if _queued.get(t, 9) > prio:
                 _queued[t] = prio
                 _queue.put((prio, t))
+
+
+def stale(tickers, max_age):
+    tickers = {t for t in tickers if t}
+    if not tickers:
+        return []
+    fresh = {r["ticker"] for r in db.query(
+        f"SELECT ticker FROM price_meta WHERE ticker IN ({','.join('?' * len(tickers))}) AND fetched_at > ?",
+        (*tickers, time.time() - max_age))}
+    return sorted(tickers - fresh)
 
 
 def warm_all():

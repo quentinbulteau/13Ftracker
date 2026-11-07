@@ -1,6 +1,7 @@
 """Scraping SEC EDGAR: 13F-HR (portefeuilles) et Form 4 (transactions d'initiés / >10%)."""
 import logging
 import re
+import statistics
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -72,7 +73,32 @@ def _parse_info_table(content, filed):
         a["title"] = _txt(t, "titleOfClass")
         a["shares"] += _num(_txt(t, "shrsOrPrnAmt/sshPrnamt")) or 0
         a["value"] += (_num(_txt(t, "value")) or 0) * mult
+    # Certains gérants (ex. Duquesne, Baupost) déclarent encore en milliers de $ malgré la règle de 2023 :
+    # un cours médian implicite < 1 $ trahit l'unité.
+    if _thousands([(a["value"], a["shares"]) for (_, pc), a in agg.items() if not pc]):
+        for a in agg.values():
+            a["value"] *= 1000
     return agg
+
+
+def _thousands(pairs):
+    implied = [v / s for v, s in pairs if s and v]
+    return len(implied) >= 3 and statistics.median(implied) < 1
+
+
+def normalize_thousands():
+    """Corrige en base les 13F déjà importés en milliers de $ (idempotent)."""
+    fixed = set()
+    for g in db.query("SELECT DISTINCT investor_id, period FROM holdings"):
+        rows = db.query("SELECT value, shares FROM holdings WHERE investor_id=? AND period=? AND put_call=''",
+                        (g["investor_id"], g["period"]))
+        if _thousands([(r["value"], r["shares"]) for r in rows]):
+            db.execute("UPDATE holdings SET value=value*1000 WHERE investor_id=? AND period=?", (g["investor_id"], g["period"]))
+            fixed.add(g["investor_id"])
+    for inv_id in fixed:
+        log.info("13F %s: valeurs converties depuis des milliers de $", inv_id)
+        _compute_13f_changes({"id": inv_id})
+    return fixed
 
 
 def refresh_13f(inv, subs=None, keep_periods=2):
