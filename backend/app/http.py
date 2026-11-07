@@ -24,6 +24,8 @@ _MIN_INTERVAL = {
     "query1.finance.yahoo.com": 0.25,
     "bdif.amf-france.org": 0.3,
     "news.google.com": 1.0,
+    "api.nasdaq.com": 0.5,
+    "api.telegram.org": 1.1,
     "raw.githubusercontent.com": 0.2,
 }
 _last = {}

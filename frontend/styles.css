@@ -308,3 +308,19 @@ summary { color: var(--ink-2); cursor: pointer; }
 .perf-head b { font-family: var(--cond); font-stretch: 88%; font-size: 20px; }
 .row.big { box-shadow: inset 3px 0 0 var(--buy); }
 .method p { margin: 8px 0 0; }
+
+/* ---------- fiche action, agenda ---------- */
+.card .fresh { color: rgba(255, 255, 255, .7); font-size: 11.5px; margin-top: 3px; }
+.stock-head { position: relative; padding: 64px 0 6px; }
+.stock-head .back { position: absolute; top: 14px; left: 0; background: var(--sheet-2); }
+.stock-head .back svg { stroke: var(--ink); }
+.stock-head h1 { font-family: var(--cond); font-stretch: 82%; font-size: 40px; font-weight: 800; margin: 0; letter-spacing: -.01em; line-height: 1; }
+.stock-head .kicker { color: var(--ink-2); font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.stock-head .firm { color: var(--ink-2); margin-top: 4px; }
+.stock-link { display: block; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--sheet); color: var(--stamp); font-weight: 600; }
+.stock-link b { color: var(--ink); margin-right: 8px; font-family: var(--cond); font-stretch: 85%; }
+.deadline { border: 1.5px solid var(--stamp); border-radius: 12px; padding: 11px 13px; margin-bottom: 10px; background: var(--sheet); }
+.deadline div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.deadline span { font-weight: 700; }
+.deadline b { font-family: var(--cond); font-stretch: 85%; font-size: 18px; color: var(--stamp); }
+.deadline p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }

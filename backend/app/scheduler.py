@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import amf, db, house, insiders, media, photos, press, prices, sec
+from . import agenda, amf, db, house, insiders, media, notify, photos, press, prices, sec, stakes
 from .config import FULL_REFRESH_INTERVAL, HOUSE_INTERVAL, LIVE_FEED_INTERVAL
 from .investors import BY_ID, INVESTORS
 
@@ -28,6 +28,8 @@ def refresh_one(inv_id):
         photos.fetch(inv)
         if inv.get("cik"):
             sec.refresh_investor(inv)
+            if inv["type"] == "investor":
+                stakes.refresh_investor(inv)
     except Exception:
         log.exception("refresh %s", inv_id)
 
@@ -78,6 +80,8 @@ def _fr_and_press():
     amf.refresh()
     insiders.refresh()
     press.refresh()
+    agenda.refresh()
+    notify.run()
 
 
 def start():

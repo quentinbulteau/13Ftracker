@@ -50,6 +50,32 @@ Seuls les achats et ventes sur le marché sont retenus. Les ventes américaines 
 signalées. « Achats groupés » = au moins deux dirigeants d'une même société achètent en 30 jours.
 Les compositions du CAC 40 et du DAX sont dans `backend/app/insiders.py` (à mettre à jour lors des révisions d'indices).
 
+### Notifications Telegram (gratuites)
+
+L'app envoie un message à chaque mise à jour quand il se passe quelque chose : nouveau 13F d'un gérant suivi,
+Form 4 ou 13D/13G d'un investisseur, transactions d'élus, achats d'initiés groupés ou supérieurs à 1 M.
+Les déclarations françaises ne sont pas notifiées.
+
+1. Dans Telegram, ouvrir **@BotFather**, envoyer `/newbot`, choisir un nom : il donne un **jeton** (`123456:ABC…`).
+2. Envoyer un message quelconque à ce nouveau bot.
+3. Ouvrir `https://api.telegram.org/bot<JETON>/getUpdates` dans un navigateur : relever `"chat":{"id": …}`.
+4. Sur GitHub : Settings → Secrets and variables → Actions → ajouter `TELEGRAM_BOT_TOKEN` (le jeton) et
+   `TELEGRAM_CHAT_ID` (l'identifiant).
+
+Au premier passage l'app mémorise la date sans rien envoyer, pour ne pas rattraper d'anciennes déclarations.
+
+### Autres écrans
+
+- **Fiche action** (`#/s/TICKER`) : cours sur un an, toutes les opérations déclarées (fonds, élus, 13D/13G,
+  dirigeants), fonds détenteurs, éligibilité PEA, date des prochains résultats.
+- **Consensus des gérants** (onglet Classement) : actions les plus achetées / vendues par les fonds suivis au
+  dernier trimestre publié.
+- **Agenda** : échéance légale des 13F (45 jours après le trimestre) et résultats à venir des actions détenues
+  (calendrier Nasdaq).
+- **Filtre PEA** (onglet Initiés) : valeurs du CAC 40 et du DAX ; les actions américaines n'y sont pas éligibles.
+- Les investisseurs et sociétés françaises sont masqués des fils par défaut : filtre « Investisseurs français »
+  ou « Sociétés françaises » pour les voir.
+
 ### Ajouter une rumeur ou un rachat
 
 Éditer `backend/data/curated.json` : chaque entrée a une date, un statut (`officiel`, `presse`, `declaration`,

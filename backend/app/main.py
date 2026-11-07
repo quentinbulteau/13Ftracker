@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import db, insiders, media, photos, press, prices, ranking, scheduler
+from . import agenda, consensus, db, insiders, media, photos, press, prices, ranking, scheduler
 from .config import DISABLE_SCHEDULER, FRONTEND_DIR
 from .investors import BY_ID, INVESTORS
 
@@ -21,6 +21,8 @@ SOURCE_INFO = {
     "FORM4": {"label": "Form 4", "delay": "publié ≤2 jours ouvrés après l'opération"},
     "HOUSE": {"label": "STOCK Act", "delay": "publié ≤45 j après l'opération (montants par tranches)"},
     "AMF": {"label": "AMF", "delay": "déclaration des dirigeants, publiée ≤3 jours ouvrés après l'opération"},
+    "13D": {"label": "13D", "delay": "participation > 5 % avec intention d'influer, ≤5 jours ouvrés"},
+    "13G": {"label": "13G", "delay": "participation > 5 % passive, ≤45 jours"},
 }
 
 # onglets de chaque fiche : les données officielles et la presse ne sont jamais mélangées
@@ -181,7 +183,8 @@ def feed(limit: int = 60, type: str | None = None, cat: str | None = None):
     """Flux des déclarations OFFICIELLES. Un 13F (des dizaines de lignes publiées d'un coup) est regroupé en une seule carte.
     type=investor : opérations des investisseurs (y compris AMF quand le déclarant est un investisseur suivi).
     type=company  : opérations des entreprises (13F, Form 4, opérations de leurs dirigeants auprès de l'AMF)."""
-    sel = [i for i in INVESTORS if (not type or i["type"] == type) and (not cat or i["category"] == cat)]
+    # les investisseurs et sociétés françaises ne s'affichent que si on les demande (filtre « fr »)
+    sel = [i for i in INVESTORS if (not type or i["type"] == type) and (i["category"] == cat if cat else i["category"] != "fr")]
     ids = [i["id"] for i in sel]
     ph = ",".join("?" * len(ids))
     actor_clause = f" OR (source='AMF' AND actor_id IN ({ph}))" if type == "investor" else ""
@@ -245,10 +248,26 @@ def get_insiders(market: str | None = None, side: str | None = None, limit: int 
 
 
 @app.get("/api/press")
-def press_feed(type: str | None = None, limit: int = 40):
-    """NON OFFICIEL : déclarations non réglementaires, rumeurs et articles de presse."""
-    return {"unofficial": [u for u in press.unofficial() if not type or u["entity_type"] == type],
-            "articles": press.latest(type, limit)}
+def press_feed(type: str | None = None, limit: int = 40, cat: str | None = None):
+    """NON OFFICIEL : déclarations non réglementaires, rumeurs et articles de presse (français masqués sauf cat=fr)."""
+    keep = lambda eid: (BY_ID[eid]["category"] == cat) if cat else BY_ID[eid]["category"] != "fr"
+    return {"unofficial": [u for u in press.unofficial() if (not type or u["entity_type"] == type) and keep(u["entity"])],
+            "articles": [a for a in press.latest(type, limit * 3) if keep(a["entity_id"])][:limit]}
+
+
+@app.get("/api/consensus")
+def get_consensus():
+    return consensus.compute()
+
+
+@app.get("/api/calendar")
+def get_calendar():
+    return agenda.get()
+
+
+@app.get("/api/stock/{ticker}")
+def stock(ticker: str):
+    return ticker_activity(ticker.upper())
 
 
 @app.get("/api/search")
@@ -259,7 +278,7 @@ def search(q: str):
     invs = [_summary(i) for i in INVESTORS if ql in i["name"].lower() or ql in (i.get("subtitle") or "").lower()]
     t = q.strip().upper()
     act = ticker_activity(t)
-    return {"investors": invs, "ticker": t if (act["holders"] or act["trades"]) else None, **act}
+    return {"investors": invs, "ticker": t if (act["holders"] or act["trades"] or act["insiders"]) else None, **act}
 
 
 def ticker_activity(t):
@@ -268,10 +287,20 @@ def ticker_activity(t):
                           JOIN (SELECT investor_id, MAX(period) p FROM holdings GROUP BY investor_id) m
                           ON m.investor_id=h.investor_id AND m.p=h.period
                           WHERE h.ticker=? AND h.put_call='' ORDER BY h.value DESC""", (t,))
-    traders = prices.enrich(db.query("SELECT * FROM trades WHERE ticker=? ORDER BY filed_at DESC LIMIT 50", (t,)))
+    traders = prices.enrich(db.query("SELECT * FROM trades WHERE ticker=? AND action!='OTHER' ORDER BY filed_at DESC LIMIT 60", (t,)))
     for r in holders + traders:
-        r["investor_name"], r["investor_kind"] = BY_ID[r["investor_id"]]["name"], BY_ID[r["investor_id"]]["kind"]
-    return {"holders": holders, "trades": traders}
+        inv = BY_ID[r["investor_id"]]
+        r["investor_name"], r["investor_kind"], r["investor_logo"] = inv["name"], inv["kind"], bool(inv.get("logo"))
+    ins = prices.enrich(db.query("SELECT * FROM insider_trades WHERE ticker=? ORDER BY filed_at DESC LIMIT 40", (t,)))
+    name = next((x for x in [*(r["issuer"] for r in ins), *(r["issuer"] for r in holders), *(r["issuer"] for r in traders)] if x), None)
+    # cours sur un an (base 100), un point par semaine
+    px = db.query("SELECT date, close FROM prices WHERE ticker=? AND date >= date('now','-366 days') ORDER BY date", (t,))
+    series = [[r["date"], round(r["close"] / px[0]["close"] * 100, 2)] for i, r in enumerate(px) if i % 5 == 0 or i == len(px) - 1] if px else []
+    last = db.one("SELECT last_price FROM price_meta WHERE ticker=? AND ok=1", (t,))
+    earn = db.one("SELECT date, time FROM earnings WHERE symbol=? AND date >= date('now') ORDER BY date LIMIT 1", (t,))
+    return {"ticker": t, "name": name, "holders": holders, "trades": traders, "insiders": ins, "series": series,
+            "last_price": last["last_price"] if last else None, "currency": "EUR" if t.endswith((".PA", ".DE")) else "USD",
+            "pea": t.endswith((".PA", ".DE")), "earnings": earn}
 
 
 @app.get("/api/photo/{inv_id}")

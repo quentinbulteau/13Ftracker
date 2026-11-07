@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import amf, db, house, insiders, media, photos, press, prices, ranking, sec
+from . import agenda, amf, consensus, db, house, insiders, media, notify, photos, press, prices, ranking, sec, stakes
 from .config import FRONTEND_DIR
 from .investors import INVESTORS
 
@@ -47,7 +47,8 @@ def scrape():
         db.set_meta("last_house_refresh", _now())
     except Exception:
         log.exception("house")
-    for name, fn in (("amf", amf.refresh), ("initiés", insiders.refresh), ("presse", press.refresh), ("médias", media.refresh)):
+    for name, fn in (("13D/13G", stakes.refresh), ("amf", amf.refresh), ("initiés", insiders.refresh), ("presse", press.refresh),
+                     ("médias", media.refresh), ("calendrier", agenda.refresh)):
         try:
             fn()
         except Exception:
@@ -113,19 +114,24 @@ def write_site(out: Path):
     _write(a / "feed.json", api.feed(limit=FEED_LIMIT))
     for t in ("investor", "company"):
         _write(a / f"feed-{t}.json", api.feed(limit=FEED_LIMIT, type=t))
+        _write(a / f"feed-{t}-fr.json", api.feed(limit=FEED_LIMIT, type=t, cat="fr"))
         _write(a / f"press-{t}.json", api.press_feed(type=t, limit=80))
+        _write(a / f"press-{t}-fr.json", api.press_feed(type=t, limit=80, cat="fr"))
+    _write(a / "consensus.json", api.get_consensus())
+    _write(a / "calendar.json", api.get_calendar())
     _write(a / "acquisitions.json", api.acquisitions())
     _write(a / "ranking.json", ranking.compute())
     _write(a / "insiders.json", api.get_insiders(limit=600))
 
     tickers = {r["ticker"] for r in db.query("SELECT DISTINCT ticker FROM holdings WHERE ticker IS NOT NULL "
-                                             "UNION SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL")}
+                                             "UNION SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL "
+                                             "UNION SELECT DISTINCT ticker FROM insider_trades WHERE ticker IS NOT NULL")}
     n = 0
     for t in tickers:
         if not re.fullmatch(r"[A-Z0-9.\-]{1,12}", t):
             continue
         act = api.ticker_activity(t)
-        if act["holders"] or act["trades"]:
+        if act["holders"] or act["trades"] or act["insiders"]:
             _write(a / "tickers" / f"{t}.json", act)
             n += 1
 
@@ -139,6 +145,10 @@ def run(out):
     refresh_prices()
     db.set_meta("last_full_refresh", _now())
     write_site(Path(out))
+    try:
+        notify.run()
+    except Exception:
+        log.exception("notifications")
     log.info("export terminé en %.0f s", time.time() - t0)
 
 

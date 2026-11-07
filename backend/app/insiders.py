@@ -27,6 +27,8 @@ db.execute("""CREATE TABLE IF NOT EXISTS insider_trades (
     trade_date TEXT, filed_at TEXT, shares REAL, price REAL, value REAL, currency TEXT, planned INTEGER, url TEXT)""")
 db.execute("CREATE INDEX IF NOT EXISTS ix_ins_filed ON insider_trades(filed_at)")
 db.execute("CREATE TABLE IF NOT EXISTS insider_docs (id TEXT PRIMARY KEY)")
+if "detected_at" not in {r["name"] for r in db.query("PRAGMA table_info(insider_trades)")}:
+    db.execute("ALTER TABLE insider_trades ADD COLUMN detected_at TEXT")
 
 # CAC 40 : jeton AMF -> (nom, ticker). Airbus, Stellantis, STMicroelectronics et ArcelorMittal déclarent
 # hors de France (Pays-Bas / Luxembourg) et n'apparaissent donc pas à l'AMF.
@@ -66,7 +68,8 @@ DAX = {
 _DAX_NAMES = {re.sub(r"[^a-z]", "", n.lower()): isin for isin, (n, _) in DAX.items()}
 _DAX_NAMES.update({"adidasag": "DE000A1EWWW0", "heidelbergmaterialsag": "DE0006047004", "vonoviase": "DE000A1ML7J1"})
 
-MARKETS = {"US": "Top 100 US", "FR": "CAC 40", "DE": "DAX"}
+MARKETS = {"US": "Top 100 US", "DE": "DAX", "FR": "CAC 40"}
+PEA = ("FR", "DE")  # sociétés de l'Union européenne : éligibles au PEA (les actions US ne le sont pas)
 
 
 def _done(doc_id):
@@ -78,8 +81,12 @@ def _mark(doc_id):
 
 
 def _store(rows):
+    # INSERT OR IGNORE : une opération déjà connue garde sa date de détection (utile aux notifications)
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # même format que datetime('now') de SQLite
     with db.tx() as con:
-        con.executemany("INSERT OR REPLACE INTO insider_trades VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        con.executemany("""INSERT OR IGNORE INTO insider_trades(uid,market,issuer,ticker,insider,role,action,trade_date,filed_at,
+                           shares,price,value,currency,planned,url,detected_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        [(*r, now) for r in rows])
 
 
 # --------------------------------------------------------------------------- États-Unis

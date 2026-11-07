@@ -48,6 +48,10 @@ jobs:
       - name: Scraper et générer le site
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          # notifications Telegram (facultatif) : voir README
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           OPENFIGI_API_KEY: ${{ secrets.OPENFIGI_API_KEY }}
         run: |
           if [ -z "$SEC_USER_AGENT" ]; then echo "::error::Secret SEC_USER_AGENT manquant (Settings > Secrets and variables > Actions)"; exit 1; fi
