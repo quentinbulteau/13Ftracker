@@ -22,6 +22,9 @@ _MIN_INTERVAL = {
     "upload.wikimedia.org": 0.3,
     "disclosures-clerk.house.gov": 0.3,
     "query1.finance.yahoo.com": 0.25,
+    "bdif.amf-france.org": 0.3,
+    "news.google.com": 1.0,
+    "raw.githubusercontent.com": 0.2,
 }
 _last = {}
 _locks = {}

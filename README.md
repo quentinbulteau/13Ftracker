@@ -12,6 +12,30 @@ en scrapant directement les déclarations obligatoires officielles :
 Chaque investisseur a une photo (Wikipédia/Wikimedia Commons, ou initiales à défaut), un onglet
 **Achats & ventes** et un onglet **Portefeuille**.
 
+## Organisation : jamais de mélange
+
+- **Deux espaces séparés** : *Investisseurs* (gérants US, élus US, investisseurs français) et *Entreprises*
+  (IA & tech, sociétés françaises cotées).
+- **Officiel vs non officiel** : chaque fiche sépare les déclarations réglementaires (onglets « Achats & ventes »,
+  « Portefeuille », « Déclarations AMF »…) de l'onglet orange **« Presse & rumeurs »**. Le flux a deux modes : *Officiel*
+  et *Presse & rumeurs*. Chaque information non officielle porte un statut : *Presse*, *Déclaration publique*
+  (propos de l'investisseur sur X, Substack…) ou *Rumeur*, avec ses sources.
+
+| Source | Statut | Contenu |
+|---|---|---|
+| SEC 13F / Form 4 | officiel | portefeuilles et transactions des gérants US |
+| Chambre des représentants (STOCK Act) | officiel | transactions des élus |
+| AMF – déclarations des dirigeants (BDIF) | officiel | achats/ventes des dirigeants de sociétés cotées à Paris et de leurs holdings (Bolloré, Arnault, Pinault…) |
+| « Médias français, qui possède quoi ? » (Le Monde diplomatique & Acrimed, ODC-By) | données publiques | chaîne de détention des médias des milliardaires (fin 2024) |
+| `backend/data/curated.json` | saisi à la main, sourcé | rachats de startups de l'IA, rumeurs et déclarations publiques, rachats de médias récents |
+| Google News (RSS) | non officiel | articles de presse par investisseur / entreprise, et articles associés à chaque rachat |
+
+### Ajouter une rumeur ou un rachat
+
+Éditer `backend/data/curated.json` : chaque entrée a une date, un statut (`officiel`, `presse`, `declaration`,
+`rumeur`), un résumé et au moins une source (titre + lien). Les articles de presse liés aux rachats sont ensuite
+trouvés automatiquement. Ne jamais ajouter une information sans source.
+
 ## Rapidité de détection
 
 - **Flux EDGAR temps réel** interrogé toutes les 60 s (`getcurrent` pour 13F-HR et Form 4) : dès qu'un investisseur suivi

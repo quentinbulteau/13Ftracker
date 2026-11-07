@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import db, house, photos, prices, sec
+from . import amf, db, house, media, photos, press, prices, sec
 from .config import FULL_REFRESH_INTERVAL, HOUSE_INTERVAL, LIVE_FEED_INTERVAL
 from .investors import BY_ID, INVESTORS
 
@@ -38,10 +38,11 @@ def full_refresh():
         sec.normalize_thousands()
         for inv in INVESTORS:
             refresh_one(inv["id"])
-        try:
-            house.refresh()
-        except Exception:
-            log.exception("house")
+        for name, fn in (("house", house.refresh), ("amf", amf.refresh), ("presse", press.refresh), ("médias", media.refresh)):
+            try:
+                fn()
+            except Exception:
+                log.exception(name)
         prices.warm_all()
         db.set_meta("last_full_refresh", _now())
         db.set_meta("last_house_refresh", _now())
@@ -72,8 +73,14 @@ def _house():
         log.info("%d nouvelles transactions d'élus", n)
 
 
+def _fr_and_press():
+    amf.refresh()
+    press.refresh()
+
+
 def start():
     threading.Thread(target=full_refresh, daemon=True, name="initial").start()
     threading.Thread(target=_loop, args=(_live, LIVE_FEED_INTERVAL, "live"), daemon=True, name="live").start()
     threading.Thread(target=_loop, args=(_house, HOUSE_INTERVAL, "house"), daemon=True, name="house").start()
+    threading.Thread(target=_loop, args=(_fr_and_press, HOUSE_INTERVAL, "amf+presse"), daemon=True, name="amf").start()
     threading.Thread(target=_loop, args=(full_refresh, FULL_REFRESH_INTERVAL, "full"), daemon=True, name="full").start()

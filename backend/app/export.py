@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import db, house, photos, prices, sec
+from . import amf, db, house, media, photos, press, prices, sec
 from .config import FRONTEND_DIR
 from .investors import INVESTORS
 
@@ -47,6 +47,11 @@ def scrape():
         db.set_meta("last_house_refresh", _now())
     except Exception:
         log.exception("house")
+    for name, fn in (("amf", amf.refresh), ("presse", press.refresh), ("médias", media.refresh)):
+        try:
+            fn()
+        except Exception:
+            log.exception(name)
 
 
 def refresh_prices():
@@ -98,8 +103,14 @@ def write_site(out: Path):
         _write(a / "investors" / i / "index.json", detail)
         _write(a / "investors" / i / "trades.json", api.trades(i, limit=TRADES_LIMIT))
         _write(a / "investors" / i / "portfolio.json", api.portfolio(i))
+        _write(a / "investors" / i / "press.json", api.entity_press(i))
+        _write(a / "investors" / i / "acquisitions.json", api.entity_acquisitions(i))
 
     _write(a / "feed.json", api.feed(limit=FEED_LIMIT))
+    for t in ("investor", "company"):
+        _write(a / f"feed-{t}.json", api.feed(limit=FEED_LIMIT, type=t))
+        _write(a / f"press-{t}.json", api.press_feed(type=t, limit=80))
+    _write(a / "acquisitions.json", api.acquisitions())
 
     tickers = {r["ticker"] for r in db.query("SELECT DISTINCT ticker FROM holdings WHERE ticker IS NOT NULL "
                                              "UNION SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL")}

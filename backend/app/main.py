@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import db, photos, prices, scheduler
+from . import db, media, photos, press, prices, scheduler
 from .config import DISABLE_SCHEDULER, FRONTEND_DIR
 from .investors import BY_ID, INVESTORS
 
@@ -18,6 +18,16 @@ SOURCE_INFO = {
     "13F": {"label": "13F", "delay": "trimestriel, publié ≤45 j après la fin du trimestre"},
     "FORM4": {"label": "Form 4", "delay": "publié ≤2 jours ouvrés après l'opération"},
     "HOUSE": {"label": "STOCK Act", "delay": "publié ≤45 j après l'opération (montants par tranches)"},
+    "AMF": {"label": "AMF", "delay": "déclaration des dirigeants, publiée ≤3 jours ouvrés après l'opération"},
+}
+
+# onglets de chaque fiche : les données officielles et la presse ne sont jamais mélangées
+TABS = {
+    "fund": [("trades", "Achats & ventes"), ("portfolio", "Portefeuille"), ("press", "Presse & rumeurs")],
+    "politician": [("trades", "Achats & ventes"), ("portfolio", "Portefeuille"), ("press", "Presse & rumeurs")],
+    "fr_investor": [("trades", "Déclarations AMF"), ("portfolio", "Médias & participations"), ("press", "Presse & rumeurs")],
+    "company": [("acquisitions", "Rachats"), ("portfolio", "Portefeuille 13F"), ("press", "Presse")],
+    "fr_company": [("trades", "Opérations des dirigeants"), ("press", "Presse")],
 }
 
 
@@ -33,10 +43,11 @@ def _summary(inv):
     agg = db.one("SELECT SUM(value) v, COUNT(*) n FROM holdings WHERE investor_id=? AND period=?", (i, period)) if period else {}
     last = db.one("SELECT MAX(filed_at) f FROM filings WHERE investor_id=? AND (source!='FORM4' OR accession IN "
                   "(SELECT substr(uid,4,20) FROM trades WHERE investor_id=? AND source='FORM4'))", (i, i))
-    last_trade = db.one("SELECT MAX(filed_at) f FROM trades WHERE investor_id=?", (i,))
-    n_trades = db.one("SELECT COUNT(*) n FROM trades WHERE investor_id=?", (i,))["n"]
+    last_trade = db.one("SELECT MAX(filed_at) f FROM trades WHERE investor_id=? OR actor_id=?", (i, i))
+    n_trades = db.one("SELECT COUNT(*) n FROM trades WHERE (investor_id=? OR actor_id=?) AND action!='OTHER'", (i, i))["n"]
     return {
         "id": i, "name": inv["name"], "subtitle": inv.get("subtitle"), "kind": inv["kind"], "cik": inv.get("cik"),
+        "type": inv["type"], "category": inv["category"], "logo": bool(inv.get("logo")), "ticker": inv.get("ticker"),
         "photo": f"/api/photo/{i}",
         "period": period, "portfolio_value": (agg or {}).get("v"), "positions": (agg or {}).get("n") or 0,
         "last_filing": max(filter(None, [last["f"], last_trade["f"]]), default=None), "trade_count": n_trades,
@@ -64,14 +75,21 @@ def investor(inv_id: str):
     s["unparsed"] = db.query("""SELECT f.url, f.filed_at FROM house_docs h JOIN filings f ON f.accession='HOUSE-'||h.doc_id
                                WHERE h.investor_id=? AND h.status!='ok' ORDER BY f.filed_at DESC""", (inv_id,))
     s["sec_url"] = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={inv['cik']}" if inv.get("cik") else None
+    s["inactive"] = inv.get("inactive")
+    tabs = TABS[inv["kind"]]
+    if inv["kind"] == "company" and not inv.get("cik"):
+        tabs = [t for t in tabs if t[0] != "portfolio"]
+    s["tabs"] = [{"id": t, "label": l} for t, l in tabs]
+    if inv["kind"] == "fr_investor" and not any(r["source"] == "AMF" for r in s["sources"]):
+        s["sources"].append(SOURCE_INFO["AMF"] | {"source": "AMF"})
     return s
 
 
 @app.get("/api/investors/{inv_id}/trades")
 def trades(inv_id: str, limit: int = 300, source: str | None = None):
     _inv(inv_id)
-    sql = "SELECT * FROM trades WHERE investor_id=?"
-    params = [inv_id]
+    sql = "SELECT * FROM trades WHERE (investor_id=? OR actor_id=?)"
+    params = [inv_id, inv_id]
     if source:
         sql += " AND source=?"
         params.append(source)
@@ -84,6 +102,11 @@ def portfolio(inv_id: str):
     inv = _inv(inv_id)
     if inv["kind"] == "politician":
         return _estimated_portfolio(inv_id)
+    if inv["kind"] == "fr_investor":
+        return {"type": "FR", "media": media.held_by(inv.get("mdiplo")), "media_source": media.SOURCE,
+                "deals": press.unofficial(inv_id),
+                "companies": db.query("""SELECT investor_id company_id, issuer company, ticker, MAX(trade_date) last_date, COUNT(*) n
+                                         FROM trades WHERE actor_id=? AND source='AMF' GROUP BY investor_id ORDER BY last_date DESC""", (inv_id,))}
     periods = [r["period"] for r in db.query(
         "SELECT DISTINCT period FROM holdings WHERE investor_id=? ORDER BY period DESC LIMIT 2", (inv_id,))]
     if not periods:
@@ -152,12 +175,21 @@ def _estimated_portfolio(inv_id):
 
 
 @app.get("/api/feed")
-def feed(limit: int = 60, kind: str | None = None):
-    """Flux des déclarations. Un 13F (des dizaines de lignes publiées d'un coup) est regroupé en une seule carte."""
-    ids = [i["id"] for i in INVESTORS if not kind or i["kind"] == kind]
+def feed(limit: int = 60, type: str | None = None, cat: str | None = None):
+    """Flux des déclarations OFFICIELLES. Un 13F (des dizaines de lignes publiées d'un coup) est regroupé en une seule carte.
+    type=investor : opérations des investisseurs (y compris AMF quand le déclarant est un investisseur suivi).
+    type=company  : opérations des entreprises (13F, Form 4, opérations de leurs dirigeants auprès de l'AMF)."""
+    sel = [i for i in INVESTORS if (not type or i["type"] == type) and (not cat or i["category"] == cat)]
+    ids = [i["id"] for i in sel]
     ph = ",".join("?" * len(ids))
-    rows = prices.enrich(db.query(f"""SELECT * FROM trades WHERE investor_id IN ({ph}) AND source!='13F'
-                                      ORDER BY filed_at DESC, trade_date DESC LIMIT ?""", (*ids, limit)))
+    actor_clause = f" OR (source='AMF' AND actor_id IN ({ph}))" if type == "investor" else ""
+    rows = prices.enrich(db.query(f"""SELECT * FROM trades WHERE (investor_id IN ({ph}){actor_clause}) AND source!='13F'
+                                      AND action!='OTHER' ORDER BY filed_at DESC, trade_date DESC LIMIT ?""",
+                                  (*ids, *(ids if actor_clause else []), limit)))
+    if type == "investor":  # une opération AMF s'affiche sous le nom de l'investisseur, la société en sous-titre
+        for r in rows:
+            if r["source"] == "AMF" and r.get("actor_id") in ids:
+                r["investor_id"] = r["actor_id"]
     summaries = db.query(f"""SELECT investor_id, trade_date, MAX(filed_at) filed_at, MAX(url) url, COUNT(*) n,
                                SUM(action='NEW') n_new, SUM(action='ADD') n_add, SUM(action='REDUCE') n_reduce, SUM(action='EXIT') n_exit,
                                SUM(CASE WHEN action IN ('NEW','ADD') THEN value END) bought,
@@ -171,8 +203,33 @@ def feed(limit: int = 60, kind: str | None = None):
     out = sorted(rows + summaries, key=lambda r: (r["filed_at"] or "", r["trade_date"] or ""), reverse=True)[:limit]
     for r in out:
         inv = BY_ID[r["investor_id"]]
-        r["investor_name"], r["investor_kind"] = inv["name"], inv["kind"]
+        r["investor_name"], r["investor_kind"], r["investor_logo"] = inv["name"], inv["kind"], bool(inv.get("logo"))
+        r["investor_category"] = inv["category"]
     return out
+
+
+@app.get("/api/investors/{inv_id}/press")
+def entity_press(inv_id: str):
+    _inv(inv_id)
+    return {"unofficial": press.unofficial(inv_id), "articles": press.articles(inv_id)}
+
+
+@app.get("/api/investors/{inv_id}/acquisitions")
+def entity_acquisitions(inv_id: str):
+    _inv(inv_id)
+    return press.acquisitions(inv_id)
+
+
+@app.get("/api/acquisitions")
+def acquisitions():
+    return press.acquisitions()
+
+
+@app.get("/api/press")
+def press_feed(type: str | None = None, limit: int = 40):
+    """NON OFFICIEL : déclarations non réglementaires, rumeurs et articles de presse."""
+    return {"unofficial": [u for u in press.unofficial() if not type or u["entity_type"] == type],
+            "articles": press.latest(type, limit)}
 
 
 @app.get("/api/search")
