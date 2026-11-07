@@ -93,6 +93,13 @@ main { max-width: 760px; margin: 0 auto; padding: 0 16px 24px; }
 .pill.buy { color: var(--buy); background: var(--buy-bg); }
 .pill.sell { color: var(--sell); background: var(--sell-bg); }
 .pill.neutral { color: var(--muted); background: var(--neutral-bg); }
+.perf { font-size: 12px; font-weight: 700; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.perf span { font-weight: 500; color: var(--muted); font-size: 11px; }
+.perf.up, .buy-c, .top .buy { color: var(--buy); }
+.perf.down, .sell-c, .top .sell { color: var(--sell); }
+.top span { font-weight: 700; margin-right: 4px; }
+.row .l1.wrap { flex-wrap: wrap; row-gap: 3px; }
+.when { color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .src { font-size: 10.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
 
 .day { color: var(--muted); font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin: 18px 4px 8px; }

@@ -20,8 +20,32 @@ Chaque investisseur a une photo (Wikipédia/Wikimedia Commons, ou initiales à d
 - Rafraîchissement complet toutes les 6 h (filet de sécurité).
 - Côté app : le flux et le badge « Flux » se mettent à jour chaque minute ; notification navigateur optionnelle (activée au premier ajout en favori).
 - Dans l'onglet Portefeuille, une position est annotée si un **Form 4 postérieur au 13F** a modifié la ligne.
+- Chaque mouvement du portefeuille affiche sa date : exacte si un Form 4 existe, sinon le trimestre du 13F.
+- Un 13F (des dizaines de variations publiées d'un coup) apparaît dans le flux comme **une seule carte** récapitulative.
+- Les Form 4 affichent la **période du rapport** (`periodOfReport`) déclarée à la SEC.
 
-## Lancer
+## Évolution du cours depuis le dépôt
+
+Chaque transaction affiche la variation du cours entre la **dernière clôture avant publication** (heure de New York)
+et le dernier cours connu. Cours issus de l'API publique non officielle de Yahoo Finance, en cache 15 min
+(données gratuites, retardées, sans garantie de disponibilité).
+
+## Version en ligne, sans ordinateur (GitHub Actions + Pages)
+
+Le workflow `.github/workflows/update.yml` scrape les déclarations **toutes les 30 min** sur les serveurs de GitHub
+et publie l'app sur GitHub Pages (`https://<compte>.github.io/13Ftracker/`). Gratuit si le dépôt est public.
+
+Mise en place (une fois) :
+1. Settings → General → Danger Zone → **Change visibility → Public**.
+2. Settings → Pages → Source : **GitHub Actions**.
+3. Settings → Secrets and variables → Actions → **New repository secret** : `SEC_USER_AGENT` = `Nom email@domaine`.
+4. Actions → « Mise à jour des données » → **Run workflow** (le premier passage prend ~15 min).
+
+Dans cette version figée, les données sont des fichiers JSON (`python -m backend.app.export --out site`),
+la recherche se fait sur le téléphone. GitHub désactive les tâches planifiées d'un dépôt public après
+60 jours sans commit : il suffit alors de cliquer sur « Enable workflow » dans l'onglet Actions.
+
+## Lancer en local (temps réel, 1 min)
 
 ```bash
 pip install -r backend/requirements.txt
@@ -67,6 +91,7 @@ backend/app/
   house.py      index XML + parsing des PDF PTR de la Chambre
   cusip.py      CUSIP -> ticker (OpenFIGI, puis rapprochement par nom avec la liste SEC)
   photos.py     photos Wikipédia/Commons mises en cache
+  prices.py     cours de bourse (Yahoo Finance) et évolution depuis le dépôt
   scheduler.py  boucles de scraping en arrière-plan
   main.py       API REST (FastAPI) + service du front
 frontend/       PWA vanilla JS (aucun build)

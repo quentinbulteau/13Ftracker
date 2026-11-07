@@ -84,6 +84,12 @@ CREATE TABLE IF NOT EXISTS meta (
 
 with _lock:
     _conn.executescript(SCHEMA)
+    # migrations légères
+    cols = {r[1] for r in _conn.execute("PRAGMA table_info(trades)")}
+    if "report_date" not in cols:  # "Period of report" du Form 4
+        _conn.execute("ALTER TABLE trades ADD COLUMN report_date TEXT")
+        _conn.execute("""UPDATE trades SET report_date=(SELECT period FROM filings WHERE accession=substr(trades.uid,4,20))
+                         WHERE source='FORM4'""")
 
 
 @contextmanager
