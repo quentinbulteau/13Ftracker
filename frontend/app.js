@@ -68,7 +68,37 @@ function card(inv, { large = false, tag = "" } = {}) {
   </a>`;
 }
 
+const pct = (v) => `${v > 0 ? "+" : ""}${v.toLocaleString("fr-FR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} %`;
+const perfTag = (t) => t.perf_pct == null ? "" :
+  `<div class="perf ${t.perf_pct >= 0 ? "up" : "down"}" title="Cours ${t.price_ref.toFixed(2)} $ (dernière clôture avant publication, le ${fdate(t.price_ref_date)}) → ${t.price_now.toFixed(2)} $ aujourd'hui">${t.perf_pct >= 0 ? "▲" : "▼"} ${pct(t.perf_pct)} <span>depuis dépôt</span></div>`;
+
+// date affichée: trimestre (13F), période du rapport (Form 4), date d'opération (élus)
+const tradeDate = (t) => t.source === "13F" ? quarter(t.trade_date)
+  : t.source === "FORM4" ? `<span title="Period of report (déclaré à la SEC) · publié le ${fdate(t.filed_at)}">Pér. ${fdate(t.report_date || t.trade_date, { day: "numeric", month: "short" })}</span>`
+  : fdate(t.trade_date, { day: "numeric", month: "short" });
+
+// carte unique pour un 13F (toutes les variations du trimestre publiées d'un coup)
+function summaryRow(s, { isNew = false } = {}) {
+  const parts = [[s.n_new, "nouvelle(s)"], [s.n_add, "renforcée(s)"], [s.n_reduce, "allégée(s)"], [s.n_exit, "sortie(s)"]]
+    .filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(" · ");
+  const top = (s.top || []).map((t) => `<span class="${(ACTIONS[t.action] || [])[1]}">${esc(t.ticker || t.issuer)}</span>`).join(" ");
+  return `<a class="row ${isNew ? "new" : ""}" href="#/i/${esc(s.investor_id)}/trades">
+    <img class="avatar ${s.investor_kind === "company" ? "logo" : ""}" src="/api/photo/${esc(s.investor_id)}" alt="" loading="lazy">
+    <div class="main">
+      <div class="l1"><span class="pill neutral">13F ${quarter(s.trade_date)}</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.investor_name)}</span></div>
+      <div class="l2">${parts} — ${s.n} variation(s)</div>
+      <div class="l2 top">Plus gros mouvements : ${top}</div>
+    </div>
+    <div class="right">
+      ${s.bought ? `<div class="amt buy-c">+${usd(s.bought)}</div>` : ""}
+      ${s.sold ? `<div class="amt sell-c">−${usd(s.sold)}</div>` : ""}
+      <div class="date">publié ${fdate(s.filed_at, { day: "numeric", month: "short" })}</div>
+    </div>
+  </a>`;
+}
+
 function tradeRow(t, { showInvestor = false, isNew = false } = {}) {
+  if (t.action === "SUMMARY") return summaryRow(t, { isNew });
   const [label, cls] = ACTIONS[t.action] || [t.action, "neutral"];
   const lead = showInvestor
     ? `<img class="avatar ${t.investor_kind === "company" ? "logo" : ""}" src="/api/photo/${esc(t.investor_id)}" alt="" loading="lazy">`
@@ -87,7 +117,8 @@ function tradeRow(t, { showInvestor = false, isNew = false } = {}) {
     </div>
     <div class="right">
       <div class="amt">${amount(t)}</div>
-      <div class="date">${t.source === "13F" ? quarter(t.trade_date) : fdate(t.trade_date, { day: "numeric", month: "short" })} <span class="src">${SOURCES[t.source] || t.source}</span></div>
+      ${perfTag(t)}
+      <div class="date">${tradeDate(t)} <span class="src">${SOURCES[t.source] || t.source}</span></div>
     </div>
   </a>`;
 }
@@ -219,8 +250,8 @@ async function renderPortfolio(inv, body) {
       <div class="row pos">
         <div class="logo-tk">${esc((p.ticker || "—").slice(0, 5))}</div>
         <div class="main">
-          <div class="l1"><span class="tk">${esc(p.ticker || "")}</span><span class="l2" style="margin:0">${esc(p.issuer || "")}</span></div>
-          <div class="l2">${p.buys} achat(s) · ${p.sells} vente(s) partielle(s) · dernier mvt ${fdate(p.last_date)}</div>
+          <div class="l1 wrap"><span class="tk">${esc(p.ticker || "")}</span><span class="pill ${(ACTIONS[p.last_action] || [])[1] || "neutral"}">${(ACTIONS[p.last_action] || [p.last_action])[0]}</span><span class="when">le ${fdate(p.last_date, { day: "numeric", month: "short", year: "numeric" })}</span></div>
+          <div class="l2">${esc(p.issuer || "")} · ${p.buys} achat(s) · ${p.sells} vente(s) partielle(s)</div>
           <div class="bar"><i style="width:${((p.high || 0) / max) * 100}%"></i></div>
         </div>
         <div class="right"><div class="amt">${p.high ? `${usd(p.low)} – ${usd(p.high)}` : "—"}</div><div class="date">${esc(p.asset_type || "")}</div></div>
@@ -232,11 +263,15 @@ async function renderPortfolio(inv, body) {
     positions longues US uniquement (pas de shorts, ni d'actifs hors 13F).</div>
     <div class="list">${pf.positions.map((p) => {
       const ch = p.change ? ACTIONS[p.change] : null;
-      const f4 = p.after_13f ? `<div class="f4">Form 4 du ${fdate(p.after_13f.trade_date)} : ${ACTIONS[p.after_13f.action][0].toLowerCase()} → ${num(p.after_13f.shares_after)} titres</div>` : "";
+      const f4 = p.after_13f ? `<div class="f4">Après le 13F (Form 4) : détient ${num(p.after_13f.shares_after)} titres au ${fdate(p.after_13f.trade_date)}</div>` : "";
+      const lm = p.last_move;
+      const when = !lm ? "" : lm.exact
+        ? `<span class="when">${ACTIONS[lm.action][0]} le ${fdate(lm.date, { day: "numeric", month: "short", year: "numeric" })}</span>`
+        : `<span class="when" title="Le 13F ne donne pas la date exacte : mouvement entre le ${fdate(lm.from)} et le ${fdate(lm.date)}">au ${quarter(lm.date)}</span>`;
       return `<div class="row pos">
         <div class="logo-tk">${esc((p.ticker || p.issuer || "—").slice(0, 5))}</div>
         <div class="main">
-          <div class="l1"><span class="tk">${esc(p.ticker || p.issuer)}</span>${p.put_call ? `<span class="pill neutral">${esc(p.put_call)}</span>` : ""}${ch ? `<span class="pill ${ch[1]}">${ch[0]}</span>` : ""}</div>
+          <div class="l1 wrap"><span class="tk">${esc(p.ticker || p.issuer)}</span>${p.put_call ? `<span class="pill neutral">${esc(p.put_call)}</span>` : ""}${ch ? `<span class="pill ${ch[1]}">${ch[0]}</span>` : ""}${when}</div>
           <div class="l2">${esc(p.issuer)} · ${num(p.shares)} titres</div>
           <div class="bar"><i style="width:${(p.weight / max) * 100}%"></i></div>
           ${f4}

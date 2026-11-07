@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import db, house, photos, sec
+from . import db, house, photos, prices, sec
 from .config import FULL_REFRESH_INTERVAL, HOUSE_INTERVAL, LIVE_FEED_INTERVAL
 from .investors import BY_ID, INVESTORS
 
@@ -41,6 +41,7 @@ def full_refresh():
             house.refresh()
         except Exception:
             log.exception("house")
+        prices.warm_all()
         db.set_meta("last_full_refresh", _now())
         db.set_meta("last_house_refresh", _now())
         log.info("rafraîchissement complet terminé")

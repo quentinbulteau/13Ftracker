@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import db, photos, scheduler
+from . import db, photos, prices, scheduler
 from .config import DISABLE_SCHEDULER, FRONTEND_DIR
 from .investors import BY_ID, INVESTORS
 
@@ -77,7 +77,7 @@ def trades(inv_id: str, limit: int = 300, source: str | None = None):
         sql += " AND source=?"
         params.append(source)
     sql += " ORDER BY trade_date DESC, filed_at DESC LIMIT ?"
-    return db.query(sql, (*params, limit))
+    return prices.enrich(db.query(sql, (*params, limit)))
 
 
 @app.get("/api/investors/{inv_id}/portfolio")
@@ -98,15 +98,30 @@ def portfolio(inv_id: str):
     for r in db.query("""SELECT ticker, shares_after, trade_date, action FROM trades WHERE investor_id=? AND source='FORM4'
                          AND trade_date>? ORDER BY trade_date ASC, filed_at ASC""", (inv_id, periods[0])):
         f4[r["ticker"]] = r
+    # dernier Form 4 depuis le début du trimestre: date exacte du dernier mouvement
+    q_start = periods[1] if len(periods) > 1 else "0000"
+    last_f4 = {}
+    for r in db.query("""SELECT ticker, trade_date, action FROM trades WHERE investor_id=? AND source='FORM4'
+                         AND trade_date>? ORDER BY trade_date ASC, filed_at ASC""", (inv_id, q_start)):
+        last_f4[r["ticker"]] = r
     out = []
     for r in cur:
         p = prev.get((r["cusip"], r["put_call"]))
+        change = "NEW" if (prev and not p) else (None if not p else
+                 "ADD" if r["shares"] > p["shares"] else "REDUCE" if r["shares"] < p["shares"] else None)
+        lf = last_f4.get(r["ticker"]) if r["ticker"] and not r["put_call"] else None
+        if lf:  # date exacte connue grâce au Form 4
+            last_move = {"date": lf["trade_date"], "action": lf["action"], "source": "FORM4", "exact": True}
+        elif change:  # le 13F ne donne que le trimestre
+            last_move = {"date": periods[0], "action": change, "source": "13F", "exact": False,
+                         "from": periods[1] if len(periods) > 1 else None}
+        else:
+            last_move = None
         out.append({
             "ticker": r["ticker"], "issuer": r["issuer"], "title": r["title"], "cusip": r["cusip"], "put_call": r["put_call"] or None,
             "shares": r["shares"], "value": r["value"], "weight": (r["value"] or 0) / total * 100,
             "prev_shares": p["shares"] if p else None,
-            "change": "NEW" if (prev and not p) else (None if not p else
-                       "ADD" if r["shares"] > p["shares"] else "REDUCE" if r["shares"] < p["shares"] else None),
+            "change": change, "last_move": last_move,
             "after_13f": f4.get(r["ticker"]) if r["ticker"] else None,
         })
     return {"type": "13F", "period": periods[0], "prev_period": periods[1] if len(periods) > 1 else None,
@@ -139,13 +154,26 @@ def _estimated_portfolio(inv_id):
 
 @app.get("/api/feed")
 def feed(limit: int = 60, kind: str | None = None):
+    """Flux des déclarations. Un 13F (des dizaines de lignes publiées d'un coup) est regroupé en une seule carte."""
     ids = [i["id"] for i in INVESTORS if not kind or i["kind"] == kind]
-    rows = db.query(f"""SELECT * FROM trades WHERE investor_id IN ({','.join('?' * len(ids))})
-                        ORDER BY filed_at DESC, trade_date DESC LIMIT ?""", (*ids, limit))
-    for r in rows:
+    ph = ",".join("?" * len(ids))
+    rows = prices.enrich(db.query(f"""SELECT * FROM trades WHERE investor_id IN ({ph}) AND source!='13F'
+                                      ORDER BY filed_at DESC, trade_date DESC LIMIT ?""", (*ids, limit)))
+    summaries = db.query(f"""SELECT investor_id, trade_date, MAX(filed_at) filed_at, MAX(url) url, COUNT(*) n,
+                               SUM(action='NEW') n_new, SUM(action='ADD') n_add, SUM(action='REDUCE') n_reduce, SUM(action='EXIT') n_exit,
+                               SUM(CASE WHEN action IN ('NEW','ADD') THEN value END) bought,
+                               SUM(CASE WHEN action IN ('REDUCE','EXIT') THEN value END) sold
+                             FROM trades WHERE investor_id IN ({ph}) AND source='13F'
+                             GROUP BY investor_id, trade_date ORDER BY filed_at DESC LIMIT ?""", (*ids, limit))
+    for s in summaries:
+        s["source"], s["action"], s["uid"] = "13F", "SUMMARY", f"13F:{s['investor_id']}:{s['trade_date']}"
+        s["top"] = db.query("""SELECT ticker, issuer, action, value FROM trades WHERE investor_id=? AND source='13F'
+                               AND trade_date=? ORDER BY value DESC LIMIT 3""", (s["investor_id"], s["trade_date"]))
+    out = sorted(rows + summaries, key=lambda r: (r["filed_at"] or "", r["trade_date"] or ""), reverse=True)[:limit]
+    for r in out:
         inv = BY_ID[r["investor_id"]]
         r["investor_name"], r["investor_kind"] = inv["name"], inv["kind"]
-    return rows
+    return out
 
 
 @app.get("/api/search")
@@ -159,7 +187,7 @@ def search(q: str):
                           JOIN (SELECT investor_id, MAX(period) p FROM holdings GROUP BY investor_id) m
                           ON m.investor_id=h.investor_id AND m.p=h.period
                           WHERE h.ticker=? AND h.put_call='' ORDER BY h.value DESC""", (t,))
-    traders = db.query("SELECT * FROM trades WHERE ticker=? ORDER BY filed_at DESC LIMIT 50", (t,))
+    traders = prices.enrich(db.query("SELECT * FROM trades WHERE ticker=? ORDER BY filed_at DESC LIMIT 50", (t,)))
     for r in holders + traders:
         r["investor_name"], r["investor_kind"] = BY_ID[r["investor_id"]]["name"], BY_ID[r["investor_id"]]["kind"]
     return {"investors": invs, "ticker": t if (holders or traders) else None, "holders": holders, "trades": traders}

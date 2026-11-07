@@ -20,6 +20,15 @@ Chaque investisseur a une photo (Wikipédia/Wikimedia Commons, ou initiales à d
 - Rafraîchissement complet toutes les 6 h (filet de sécurité).
 - Côté app : le flux et le badge « Flux » se mettent à jour chaque minute ; notification navigateur optionnelle (activée au premier ajout en favori).
 - Dans l'onglet Portefeuille, une position est annotée si un **Form 4 postérieur au 13F** a modifié la ligne.
+- Chaque mouvement du portefeuille affiche sa date : exacte si un Form 4 existe, sinon le trimestre du 13F.
+- Un 13F (des dizaines de variations publiées d'un coup) apparaît dans le flux comme **une seule carte** récapitulative.
+- Les Form 4 affichent la **période du rapport** (`periodOfReport`) déclarée à la SEC.
+
+## Évolution du cours depuis le dépôt
+
+Chaque transaction affiche la variation du cours entre la **dernière clôture avant publication** (heure de New York)
+et le dernier cours connu. Cours issus de l'API publique non officielle de Yahoo Finance, en cache 15 min
+(données gratuites, retardées, sans garantie de disponibilité).
 
 ## Lancer
 
@@ -67,6 +76,7 @@ backend/app/
   house.py      index XML + parsing des PDF PTR de la Chambre
   cusip.py      CUSIP -> ticker (OpenFIGI, puis rapprochement par nom avec la liste SEC)
   photos.py     photos Wikipédia/Commons mises en cache
+  prices.py     cours de bourse (Yahoo Finance) et évolution depuis le dépôt
   scheduler.py  boucles de scraping en arrière-plan
   main.py       API REST (FastAPI) + service du front
 frontend/       PWA vanilla JS (aucun build)

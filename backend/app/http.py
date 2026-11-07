@@ -21,6 +21,7 @@ _MIN_INTERVAL = {
     "commons.wikimedia.org": 0.5,
     "upload.wikimedia.org": 0.3,
     "disclosures-clerk.house.gov": 0.3,
+    "query1.finance.yahoo.com": 0.25,
 }
 _last = {}
 _locks = {}

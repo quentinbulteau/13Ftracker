@@ -157,6 +157,7 @@ def _parse_form4(content):
     ticker = (_txt(root, "issuer/issuerTradingSymbol") or "").upper().strip()
     ticker = None if ticker in ("", "N/A", "NA", "NONE", "-") else ticker
     issuer = _txt(root, "issuer/issuerName")
+    period = _txt(root, "periodOfReport")
     txs = []
     for i, t in enumerate(root.iter("nonDerivativeTransaction")):
         code = _txt(t, "transactionCoding/transactionCode")
@@ -171,7 +172,7 @@ def _parse_form4(content):
             "after": _num(_txt(t, "postTransactionAmounts/sharesOwnedFollowingTransaction/value")),
             "direct": _txt(t, "ownershipNature/directOrIndirectOwnership/value"),
         })
-    return owners, ticker, issuer, txs
+    return owners, ticker, issuer, period, txs
 
 
 def refresh_form4(inv, subs=None):
@@ -187,14 +188,15 @@ def refresh_form4(inv, subs=None):
         doc = re.sub(r"^xsl[^/]+/", "", f["primaryDocument"])
         url = f"{_acc_path(cik, acc)}/{doc}"
         try:
-            owners, ticker, issuer, txs = _parse_form4(http.get(url).content)
+            owners, ticker, issuer, period, txs = _parse_form4(http.get(url).content)
+            period = period or f["reportDate"]
         except Exception as e:
             log.warning("Form4 %s: %s", url, e)
             continue
         index_url = f"{_acc_path(cik, acc)}/{acc}-index.htm"
         with db.tx() as con:
             con.execute("INSERT OR REPLACE INTO filings(accession,investor_id,source,form,filed_at,period,url) VALUES (?,?,?,?,?,?,?)",
-                        (acc, inv["id"], "FORM4", f["form"], f["acceptanceDateTime"] or f["filingDate"], f["reportDate"], index_url))
+                        (acc, inv["id"], "FORM4", f["form"], f["acceptanceDateTime"] or f["filingDate"], period, index_url))
             if cik not in owners:  # l'investisseur est ici l'émetteur (ex: Form 4 d'un dirigeant de NVIDIA)
                 continue
             for t in txs:
@@ -204,10 +206,10 @@ def refresh_form4(inv, subs=None):
                 if t["direct"] == "I":
                     detail += " · détention indirecte"
                 con.execute("""INSERT OR REPLACE INTO trades(uid,investor_id,source,action,trade_date,filed_at,ticker,issuer,asset_type,
-                               shares,price,value,shares_after,details,url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                               shares,price,value,shares_after,details,url,report_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (f"F4:{acc}:{t['idx']}", inv["id"], "FORM4", t["action"], t["date"],
                              f["acceptanceDateTime"] or f["filingDate"], ticker, issuer, "Actions",
-                             t["shares"], t["price"], t["value"], t["after"], detail, index_url))
+                             t["shares"], t["price"], t["value"], t["after"], detail, index_url, period))
                 new += 1
     if new:
         log.info("Form4 %s: %d nouvelles transactions", inv["id"], new)
