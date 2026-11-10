@@ -102,7 +102,7 @@ et le dernier cours connu. Cours issus de l'API publique non officielle de Yahoo
 
 ## Version en ligne, sans ordinateur (GitHub Actions + Pages)
 
-Le workflow `.github/workflows/update.yml` scrape les déclarations **toutes les 30 min** sur les serveurs de GitHub
+Le workflow `.github/workflows/update.yml` scrape les déclarations **toutes les 20 min environ** sur les serveurs de GitHub
 et publie l'app sur GitHub Pages (`https://<compte>.github.io/13Ftracker/`). Gratuit si le dépôt est public.
 
 Mise en place (une fois) :

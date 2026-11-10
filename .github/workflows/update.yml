@@ -1,11 +1,13 @@
-# Scrape les déclarations et publie l'application sur GitHub Pages, toutes les 30 min.
+# Scrape les déclarations et publie l'application sur GitHub Pages, toutes les 20 min environ.
+# Les tâches planifiées de GitHub sont « au mieux » : en pratique elles partaient toutes les 3 à 7 heures.
+# Chaque passage relance donc lui-même le suivant (job « relance ») ; la planification ne sert plus que de secours.
 # Prérequis (une fois) : Settings > Pages > Source = "GitHub Actions"
 #                        Settings > Secrets and variables > Actions > secret SEC_USER_AGENT = "Nom email@domaine"
 name: Mise à jour des données
 
 on:
   schedule:
-    - cron: "7,37 * * * *"   # toutes les 30 min (GitHub peut retarder de quelques minutes)
+    - cron: "7,37 * * * *"   # secours : redémarre la chaîne si elle s'est arrêtée (GitHub peut retarder de plusieurs heures)
   workflow_dispatch:          # bouton « Run workflow » pour lancer à la main
   push:
     branches: [main]
@@ -70,3 +72,31 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v5
+
+  # Relance la mise à jour suivante 20 min après le début de celle-ci (même en cas d'échec, pour ne pas casser la chaîne).
+  # Un déclenchement manuel (workflow_dispatch) n'est pas soumis aux retards des tâches planifiées.
+  relance:
+    needs: update
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      INTERVAL: "1200"
+    steps:
+      - name: Attendre puis lancer le passage suivant
+        run: |
+          started=$(gh run view ${{ github.run_id }} --json startedAt -q .startedAt)
+          wait=$(( INTERVAL - ( $(date +%s) - $(date -d "$started" +%s) ) ))
+          if [ "$wait" -gt 0 ]; then echo "attente ${wait}s"; sleep "$wait"; fi
+          # garde-fou : pas de seconde chaîne si un passage est déjà en attente ou en cours
+          pending=$(gh run list --workflow update.yml --limit 20 --json databaseId,status \
+            -q '[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status != "completed")] | length')
+          if [ "$pending" = "0" ]; then
+            gh workflow run update.yml --ref main && echo "passage suivant lancé"
+          else
+            echo "un passage est déjà prévu ($pending) : rien à faire"
+          fi

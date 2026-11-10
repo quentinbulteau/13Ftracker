@@ -324,3 +324,5 @@ summary { color: var(--ink-2); cursor: pointer; }
 .deadline span { font-weight: 700; }
 .deadline b { font-family: var(--cond); font-stretch: 85%; font-size: 18px; color: var(--stamp); }
 .deadline p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }
+.freshness { color: var(--ink-2); font-size: 12.5px; margin: -10px 0 12px; }
+.freshness.late { color: var(--pencil); font-weight: 650; }
