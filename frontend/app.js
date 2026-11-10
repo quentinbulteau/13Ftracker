@@ -354,6 +354,16 @@ async function viewHome() {
     ${claims.length ? `<div class="list">${claims.slice(0, 3).map((u) => claimRow(u, { showEntity: true })).join("")}</div>` : ""}
     ${arts.length ? `<div class="list" style="margin-top:10px">${arts.slice(0, 5).map((a) => articleRow(a, { showEntity: true })).join("")}</div>` : ""}</section>`;
   document.getElementById("home-body").innerHTML = html;
+  // fraîcheur des données, visible d'un coup d'œil (signale un retard de mise à jour)
+  api("/status").then((st) => {
+    const at = st.generated_at || st.last_full_refresh;
+    if (!at) return;
+    const late = Date.now() - new Date(at) > 2 * 3600e3;
+    const el = document.createElement("p");
+    el.className = `freshness${late ? " late" : ""}`;
+    el.textContent = `Données mises à jour ${agoTime(at)}${late ? " : mise à jour en retard" : ""}`;
+    document.querySelector(".title-row")?.after(el);
+  }).catch(() => {});
   const ag = document.getElementById("home-agenda");
   if (ag) ag.innerHTML = await agendaHtml(5);
 }
@@ -900,7 +910,7 @@ async function viewAbout() {
     <div class="list">
       ${s.mode === "static" ? `
       <div class="kv"><span>Dernière mise à jour</span><span>${agoTime(s.generated_at)}</span></div>
-      <div class="kv"><span>Fréquence</span><span>toutes les 30 min environ</span></div>` : `
+      <div class="kv"><span>Fréquence</span><span>toutes les 20 min environ</span></div>` : `
       <div class="kv"><span>Flux EDGAR (temps réel)</span><span>${agoTime(s.last_live_poll)}</span></div>
       <div class="kv"><span>Chambre des représentants</span><span>${agoTime(s.last_house_refresh)}</span></div>
       <div class="kv"><span>Rafraîchissement complet</span><span>${agoTime(s.last_full_refresh)}</span></div>`}
